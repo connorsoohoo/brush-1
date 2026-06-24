@@ -1,0 +1,98 @@
+<svg width="940" height="520" viewBox="0 0 940 520" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>VGGT-Omega and Brush as two halves of one reconstruction pipeline</title>
+<desc>A left-to-right flow. Unposed images feed a front-end stage that has two interchangeable options: COLMAP (classical Structure-from-Motion, CPU, slow) or VGGT-Omega (a feed-forward 1B transformer, single GPU pass, predicts cameras plus dense depth). Both produce the same interface — camera poses, intrinsics, and a point cloud — which Brush reads as COLMAP or Nerfstudio data. Brush then runs per-scene differentiable 3D Gaussian Splatting optimization (about 30K Adam steps on WGPU, any GPU, including WASM and Android) and outputs a photorealistic splat .ply with live novel views. VGGT-Omega can also export directly in COLMAP format, which is the integration bridge.</desc>
+
+<style>
+  text { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .t   { font-size: 14px; fill: #1f2937; }
+  .ts  { font-size: 11.5px; fill: #6b7280; }
+  .th  { font-size: 14px; font-weight: 600; fill: #1f2937; }
+  .title { font-size: 17px; font-weight: 600; fill: #1f2937; }
+  .band { font-size: 11px; fill: #94a3b8; letter-spacing: 1.5px; }
+  .tag  { font-size: 11px; font-style: italic; fill: #92400e; }
+  .cap  { font-size: 12px; font-style: italic; fill: #4b5563; }
+  rect.box { fill: #f3f4f6; stroke: #cbd5e1; stroke-width: 1; }
+  .arr { stroke: #94a3b8; stroke-width: 1.6; fill: none; }
+  .c-blue  rect { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.3; }
+  .c-blue  text { fill: #1e3a8a; }
+  .c-blue  .ts  { fill: #3b5b9a; }
+  .c-amber rect { fill: #fef3c7; stroke: #d97706; stroke-width: 1.3; }
+  .c-amber text { fill: #92400e; }
+  .c-amber .ts  { fill: #a16207; }
+</style>
+
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<rect x="0" y="0" width="940" height="520" fill="#ffffff"/>
+
+<text class="title" x="470" y="34" text-anchor="middle">Two paradigms, one pipeline — VGGT-Omega (front-end) + Brush (back-end)</text>
+
+<!-- stage bands -->
+<text class="band" x="115" y="92"  text-anchor="middle">INPUT</text>
+<text class="band" x="330" y="92"  text-anchor="middle">FRONT-END · pose + geometry</text>
+<text class="band" x="555" y="92"  text-anchor="middle">INTERFACE</text>
+<text class="band" x="785" y="92"  text-anchor="middle">BACK-END · appearance</text>
+
+<!-- INPUT -->
+<g><rect class="box" x="40" y="215" width="150" height="72" rx="6"/>
+  <text class="th" x="115" y="248" text-anchor="middle">Unposed images</text>
+  <text class="ts" x="115" y="267" text-anchor="middle">or a video</text></g>
+
+<!-- COLMAP (third-party / existing path) -->
+<g><rect class="box" x="235" y="148" width="190" height="78" rx="6"/>
+  <text class="th" x="330" y="176" text-anchor="middle">COLMAP — SfM</text>
+  <text class="ts" x="330" y="195" text-anchor="middle">classical, iterative · CPU</text>
+  <text class="ts" x="330" y="211" text-anchor="middle">minutes–hours · many views</text></g>
+
+<!-- VGGT-Omega (the paper) -->
+<g class="c-amber"><rect x="235" y="258" width="190" height="88" rx="6"/>
+  <text class="th" x="330" y="284" text-anchor="middle">VGGT-Omega</text>
+  <text class="ts" x="330" y="302" text-anchor="middle">feed-forward · 1 GPU pass</text>
+  <text class="ts" x="330" y="318" text-anchor="middle">cameras + dense depth</text>
+  <text class="ts" x="330" y="334" text-anchor="middle">1B params (PyTorch/CUDA)</text></g>
+
+<!-- INTERFACE / merge -->
+<g><rect class="box" x="475" y="203" width="160" height="96" rx="6"/>
+  <text class="th" x="555" y="231" text-anchor="middle">Poses + intrinsics</text>
+  <text class="ts" x="555" y="249" text-anchor="middle">+ point cloud</text>
+  <text class="ts" x="555" y="274" text-anchor="middle">Brush reads this as</text>
+  <text class="ts" x="555" y="290" text-anchor="middle">COLMAP / Nerfstudio</text></g>
+
+<!-- BRUSH (this repo) -->
+<g class="c-blue"><rect x="685" y="203" width="200" height="96" rx="6"/>
+  <text class="th" x="785" y="231" text-anchor="middle">Brush</text>
+  <text class="ts" x="785" y="250" text-anchor="middle">differentiable 3DGS</text>
+  <text class="ts" x="785" y="266" text-anchor="middle">~30K Adam steps · per scene</text>
+  <text class="ts" x="785" y="282" text-anchor="middle">WGPU — any GPU, WASM</text></g>
+
+<!-- OUTPUT -->
+<g><rect class="box" x="685" y="357" width="200" height="62" rx="6"/>
+  <text class="th" x="785" y="385" text-anchor="middle">Photoreal splat (.ply)</text>
+  <text class="ts" x="785" y="403" text-anchor="middle">+ live novel views</text></g>
+
+<!-- arrows -->
+<line class="arr" x1="190" y1="240" x2="232" y2="192" marker-end="url(#arrow)"/>
+<line class="arr" x1="190" y1="262" x2="232" y2="298" marker-end="url(#arrow)"/>
+<line class="arr" x1="425" y1="190" x2="472" y2="234" marker-end="url(#arrow)"/>
+<line class="arr" x1="425" y1="300" x2="472" y2="262" marker-end="url(#arrow)"/>
+<line class="arr" x1="635" y1="251" x2="682" y2="251" marker-end="url(#arrow)"/>
+<line class="arr" x1="785" y1="299" x2="785" y2="356" marker-end="url(#arrow)"/>
+
+<!-- bridge tag on the VGGT->interface path -->
+<text class="tag" x="432" y="338">↳ exports COLMAP format</text>
+
+<!-- LEGEND -->
+<g class="c-amber"><rect x="40" y="458" width="15" height="15" rx="3"/></g>
+<text class="ts" x="62" y="470">VGGT-Omega (this paper)</text>
+<g class="c-blue"><rect x="232" y="458" width="15" height="15" rx="3"/></g>
+<text class="ts" x="254" y="470">Brush (this repo)</text>
+<rect class="box" x="390" y="458" width="15" height="15" rx="3"/>
+<text class="ts" x="412" y="470">data / third-party (images, COLMAP, output)</text>
+
+<!-- caption -->
+<text class="cap" x="470" y="500" text-anchor="middle">Same interface (poses + points); two interchangeable front-ends — VGGT-Omega is the learned alternative to COLMAP.</text>
+</svg>

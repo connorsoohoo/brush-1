@@ -1,0 +1,87 @@
+<svg width="920" height="500" viewBox="0 0 920 500" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>How VGGT-Omega predictions convert into the inputs Brush needs</title>
+<desc>Three columns. Left, what VGGT-Omega predicts: a 9-D pose encoding (translation 3, quaternion 4, field-of-view 2); a per-pixel depth map plus confidence; and, derived from those, a dense colored point cloud. Middle, the decode and convert step: the pose encoding decodes into extrinsics (camera-from-world, OpenCV convention) plus pinhole intrinsics with principal point at the image center; the depth unprojects into world-space points with color. Right, what Brush needs: a Camera with position, rotation, and field-of-view, and a Point3D list of position plus RGB that becomes the lowest spherical-harmonic band. A bottom banner notes that COLMAP format is the lossless wire format both already speak — VGGT-Omega exports it via pycolmap and Brush reads it via its COLMAP loader. A warning flags that the world-to-camera to camera-to-world inversion must match brush-dataset's colmap.rs.</desc>
+
+<style>
+  text { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .t   { font-size: 13px; fill: #1f2937; }
+  .ts  { font-size: 11px; fill: #6b7280; }
+  .th  { font-size: 13.5px; font-weight: 600; fill: #1f2937; }
+  .title { font-size: 17px; font-weight: 600; fill: #1f2937; }
+  .col { font-size: 12px; font-weight: 600; fill: #475569; letter-spacing: 0.5px; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; }
+  .warn { font-size: 11.5px; font-weight: 600; fill: #9a3412; }
+  .bridge { font-size: 12px; font-style: italic; fill: #334155; }
+  rect.box { fill: #f3f4f6; stroke: #cbd5e1; stroke-width: 1; }
+  rect.mid { fill: #eef2f7; stroke: #cbd5e1; stroke-width: 1; }
+  rect.bridge { fill: #f0fdf4; stroke: #86efac; stroke-width: 1.2; }
+  rect.warnbox { fill: #fff7ed; stroke: #fdba74; stroke-width: 1.2; }
+  .arr { stroke: #94a3b8; stroke-width: 1.6; fill: none; }
+  .c-blue  rect { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.3; }
+  .c-blue  text { fill: #1e3a8a; }
+  .c-blue  .ts  { fill: #3b5b9a; }
+  .c-amber rect { fill: #fef3c7; stroke: #d97706; stroke-width: 1.3; }
+  .c-amber text { fill: #92400e; }
+  .c-amber .ts  { fill: #a16207; }
+</style>
+
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<rect x="0" y="0" width="920" height="500" fill="#ffffff"/>
+<text class="title" x="460" y="32" text-anchor="middle">From VGGT-Omega predictions to Brush inputs</text>
+
+<!-- column headers -->
+<text class="col" x="150" y="66" text-anchor="middle">VGGT-Omega PREDICTS</text>
+<text class="col" x="460" y="66" text-anchor="middle">DECODE / CONVERT</text>
+<text class="col" x="775" y="66" text-anchor="middle">BRUSH NEEDS</text>
+
+<!-- LEFT: predictions (amber) -->
+<g class="c-amber"><rect x="40" y="84" width="220" height="64" rx="6"/>
+  <text class="th" x="150" y="108" text-anchor="middle">pose_enc — 9-D</text>
+  <text class="ts mono" x="150" y="128" text-anchor="middle">trans(3) · quat(4) · FoV(2)</text></g>
+<g class="c-amber"><rect x="40" y="210" width="220" height="64" rx="6"/>
+  <text class="th" x="150" y="234" text-anchor="middle">depth + depth_conf</text>
+  <text class="ts" x="150" y="254" text-anchor="middle">per-pixel, fp32</text></g>
+<g class="c-amber"><rect x="40" y="336" width="220" height="64" rx="6"/>
+  <text class="th" x="150" y="360" text-anchor="middle">dense point cloud</text>
+  <text class="ts" x="150" y="380" text-anchor="middle">(derived from depth)</text></g>
+
+<!-- MIDDLE: convert -->
+<g><rect class="mid" x="330" y="84" width="260" height="64" rx="6"/>
+  <text class="t" x="460" y="106" text-anchor="middle">decode → extrinsics + intrinsics</text>
+  <text class="ts" x="460" y="125" text-anchor="middle">cam-from-world (OpenCV) · pinhole, cx=W/2</text></g>
+<g><rect class="mid" x="330" y="336" width="260" height="64" rx="6"/>
+  <text class="t" x="460" y="360" text-anchor="middle">unproject → world points</text>
+  <text class="ts" x="460" y="379" text-anchor="middle">xyz + per-point RGB</text></g>
+
+<!-- RIGHT: Brush needs (blue) -->
+<g class="c-blue"><rect x="660" y="84" width="220" height="64" rx="6"/>
+  <text class="th" x="770" y="108" text-anchor="middle">Camera</text>
+  <text class="ts mono" x="770" y="128" text-anchor="middle">position · rotation · fov</text></g>
+<g class="c-blue"><rect x="660" y="336" width="220" height="64" rx="6"/>
+  <text class="th" x="770" y="360" text-anchor="middle">Point3D list</text>
+  <text class="ts mono" x="770" y="380" text-anchor="middle">xyz · rgb → SH band-0</text></g>
+
+<!-- arrows left->middle->right -->
+<line class="arr" x1="260" y1="116" x2="328" y2="116" marker-end="url(#arrow)"/>
+<line class="arr" x1="590" y1="116" x2="658" y2="116" marker-end="url(#arrow)"/>
+<line class="arr" x1="260" y1="368" x2="328" y2="368" marker-end="url(#arrow)"/>
+<line class="arr" x1="590" y1="368" x2="658" y2="368" marker-end="url(#arrow)"/>
+<!-- depth feeds the unprojection -->
+<line class="arr" x1="150" y1="274" x2="150" y2="334" marker-end="url(#arrow)"/>
+<text class="ts" x="162" y="308">depth → points</text>
+
+<!-- warning callout near the convention-sensitive arrow -->
+<rect class="warnbox" x="330" y="158" width="260" height="38" rx="6"/>
+<text class="warn" x="460" y="174" text-anchor="middle">⚠ w2c (OpenCV) → c2w inversion must</text>
+<text class="warn" x="460" y="189" text-anchor="middle">match brush-dataset/.../colmap.rs</text>
+
+<!-- bridge banner -->
+<rect class="bridge" x="40" y="430" width="840" height="44" rx="8"/>
+<text class="bridge" x="460" y="450" text-anchor="middle">Bridge: COLMAP format is the lossless wire both already speak —</text>
+<text class="bridge" x="460" y="467" text-anchor="middle">VGGT-Omega writes it via pycolmap, Brush reads it via its COLMAP loader. No new convention to invent.</text>
+</svg>

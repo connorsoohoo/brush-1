@@ -1,0 +1,106 @@
+<svg width="960" height="565" viewBox="0 0 960 565" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Three interchangeable front-ends feeding Brush's open pose slot</title>
+<desc>Three pose-source front-ends on the left, all feeding one slot. COLMAP (classic SfM): offline desktop CPU, minutes to hours, poses are bundle-adjusted and high accuracy, no range limit, up-to-scale. VGGT-Omega (learned): server GPU, one pass, seconds, feed-forward medium-accuracy poses, no range limit, up-to-scale. SplatKing (ARKit plus LiDAR): on-device iPhone, real time, visual-inertial drift-prone poses, but metric scale and a roughly 5 metre LiDAR range. All three produce poses, intrinsics, and a point cloud — Brush's open pose slot — which Brush optimizes into a photorealistic splat. A callout notes that Brush freezes these poses so front-end accuracy caps quality, making pose refinement (plan PR5) the highest-leverage feature for drift-prone on-device captures; and that the front-ends are complementary, since LiDAR gives VGGT-Omega metric scale while VGGT-Omega fills LiDAR's beyond-5-metre gap. SplatKing already exports COLMAP format, so it feeds Brush today with zero integration.</desc>
+
+<style>
+  text { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .ts  { font-size: 11px; fill: #6b7280; }
+  .th  { font-size: 13.5px; font-weight: 600; }
+  .title { font-size: 17px; font-weight: 600; fill: #1f2937; }
+  .band { font-size: 11px; fill: #94a3b8; letter-spacing: 1px; }
+  .cap  { font-size: 12px; font-style: italic; fill: #334155; }
+  .slotlbl { font-size: 11px; fill: #475569; }
+  .win { font-weight: 600; fill: #047857; }
+  rect.box { fill: #f3f4f6; stroke: #cbd5e1; stroke-width: 1; }
+  rect.slot { fill: #f1f5f9; stroke: #64748b; stroke-width: 1.4; stroke-dasharray: 5 3; }
+  rect.note { fill: #fff7ed; stroke: #fdba74; stroke-width: 1.2; }
+  .th-grey { fill: #1f2937; }
+  .arr { stroke: #94a3b8; stroke-width: 1.6; fill: none; }
+  .c-amber rect { fill: #fef3c7; stroke: #d97706; stroke-width: 1.3; }
+  .c-amber .th  { fill: #92400e; }
+  .c-amber .ts  { fill: #a16207; }
+  .c-teal  rect { fill: #ccfbf1; stroke: #0d9488; stroke-width: 1.3; }
+  .c-teal  .th  { fill: #115e59; }
+  .c-teal  .ts  { fill: #0f766e; }
+  .c-blue  rect { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.3; }
+  .c-blue  .th  { fill: #1e3a8a; }
+  .c-blue  .ts  { fill: #3b5b9a; }
+</style>
+
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<rect x="0" y="0" width="960" height="565" fill="#ffffff"/>
+<text class="title" x="480" y="32" text-anchor="middle">Three front-ends, one pose slot — where SplatKing fits</text>
+
+<text class="band" x="180" y="62" text-anchor="middle">FRONT-ENDS · interchangeable pose sources</text>
+<text class="band" x="740" y="62" text-anchor="middle">BRUSH · back-end</text>
+
+<!-- COLMAP -->
+<g><rect class="box" x="30" y="80" width="300" height="96" rx="6"/>
+  <text class="th th-grey" x="180" y="106" text-anchor="middle">COLMAP — classic SfM</text>
+  <text class="ts" x="180" y="126" text-anchor="middle">offline · desktop CPU · minutes–hours</text>
+  <text class="ts" x="180" y="143" text-anchor="middle">poses: bundle-adjusted (high accuracy)</text>
+  <text class="ts" x="180" y="160" text-anchor="middle">no range limit · up-to-scale</text></g>
+
+<!-- VGGT-Omega -->
+<g class="c-amber"><rect x="30" y="196" width="300" height="96" rx="6"/>
+  <text class="th" x="180" y="222" text-anchor="middle">VGGT-Omega — learned</text>
+  <text class="ts" x="180" y="242" text-anchor="middle">server GPU (CUDA) · 1 pass · seconds</text>
+  <text class="ts" x="180" y="259" text-anchor="middle">poses: feed-forward (medium)</text>
+  <text class="ts" x="180" y="276" text-anchor="middle">no range limit · up-to-scale</text></g>
+
+<!-- SplatKing -->
+<g class="c-teal"><rect x="30" y="312" width="300" height="96" rx="6"/>
+  <text class="th" x="180" y="338" text-anchor="middle">SplatKing — ARKit + LiDAR</text>
+  <text class="ts" x="180" y="358" text-anchor="middle">on-device iPhone · real time</text>
+  <text class="ts" x="180" y="375" text-anchor="middle">poses: visual-inertial (drift-prone)</text>
+  <text class="ts win" x="180" y="392" text-anchor="middle">metric scale ✓ · ~5 m LiDAR range</text></g>
+
+<!-- pose slot -->
+<g><rect class="slot" x="400" y="198" width="180" height="112" rx="8"/>
+  <text class="th th-grey" x="490" y="228" text-anchor="middle">Brush's open</text>
+  <text class="th th-grey" x="490" y="246" text-anchor="middle">pose slot</text>
+  <text class="slotlbl" x="490" y="270" text-anchor="middle">poses + intrinsics</text>
+  <text class="slotlbl" x="490" y="287" text-anchor="middle">+ point cloud</text></g>
+
+<!-- Brush -->
+<g class="c-blue"><rect x="650" y="210" width="180" height="92" rx="6"/>
+  <text class="th" x="740" y="236" text-anchor="middle">Brush</text>
+  <text class="ts" x="740" y="256" text-anchor="middle">differentiable 3DGS</text>
+  <text class="ts" x="740" y="272" text-anchor="middle">~30K Adam steps</text>
+  <text class="ts" x="740" y="288" text-anchor="middle">any GPU · WASM</text></g>
+
+<!-- output -->
+<g><rect class="box" x="650" y="340" width="180" height="54" rx="6"/>
+  <text class="th th-grey" x="740" y="372" text-anchor="middle">Photoreal splat</text></g>
+
+<!-- arrows: front-ends -> slot -->
+<line class="arr" x1="330" y1="128" x2="398" y2="220" marker-end="url(#arrow)"/>
+<line class="arr" x1="330" y1="244" x2="398" y2="250" marker-end="url(#arrow)"/>
+<line class="arr" x1="330" y1="360" x2="398" y2="284" marker-end="url(#arrow)"/>
+<!-- slot -> Brush -> output -->
+<line class="arr" x1="580" y1="254" x2="648" y2="254" marker-end="url(#arrow)"/>
+<line class="arr" x1="740" y1="302" x2="740" y2="340" marker-end="url(#arrow)"/>
+
+<!-- callout -->
+<rect class="note" x="30" y="418" width="900" height="80" rx="8"/>
+<text class="cap" x="46" y="441"><tspan style="font-weight:600;fill:#9a3412;">⚠ Brush freezes these poses</tspan> — front-end accuracy caps splat quality.</text>
+<text class="cap" x="46" y="461">On-device (ARKit) poses drift, so for SplatKing captures <tspan style="font-weight:600;fill:#115e59;">pose-refinement (plan PR5) is the highest-leverage feature</tspan> — not a stretch.</text>
+<text class="cap" x="46" y="481">Complementary, not exclusive: LiDAR gives VGGT-Omega the metric scale it lacks; VGGT-Omega fills LiDAR's beyond-~5 m gap.</text>
+
+<!-- legend -->
+<rect class="box" x="30" y="512" width="14" height="14" rx="3"/>
+<text class="ts" x="50" y="523">COLMAP</text>
+<g class="c-amber"><rect x="135" y="512" width="14" height="14" rx="3"/></g>
+<text class="ts" x="155" y="523">VGGT-Omega</text>
+<g class="c-teal"><rect x="270" y="512" width="14" height="14" rx="3"/></g>
+<text class="ts" x="290" y="523">SplatKing (on-device)</text>
+<g class="c-blue"><rect x="450" y="512" width="14" height="14" rx="3"/></g>
+<text class="ts" x="470" y="523">Brush</text>
+
+<text class="cap" x="555" y="523">SplatKing already exports COLMAP → feeds Brush today, zero integration.</text>
+</svg>
