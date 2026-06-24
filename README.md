@@ -45,6 +45,9 @@ While training, additional data can be visualized with the excellent [rerun](htt
 ## Building Brush
 First install rust 1.88+. You can run tests with `cargo test --all`. Brush uses the wonderful [rerun](https://rerun.io/) for additional visualizations while training, run `cargo install rerun-cli` if you want to use it.
 
+### Git hooks
+Brush uses [cargo-husky](https://github.com/rhysd/cargo-husky) to install git hooks on the first `cargo test`. The `pre-commit` hook runs `cargo fmt --check` (plus `typos`, if installed); the `pre-push` hook runs the CI compile + lint checks (`cargo check`/`clippy`/`doc` and the wasm32 check). The scripts live in `.cargo-husky/hooks/`; skip them for one command with `--no-verify`.
+
 ### Windows/macOS/Linux
 Use `cargo run --release` from the workspace root to make an optimized build. Use `cargo run` to run a debug build. 
 

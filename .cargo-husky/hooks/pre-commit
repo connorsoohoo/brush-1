@@ -1,0 +1,19 @@
+#!/bin/sh
+# Fast pre-commit checks: the quick CI checks (cargo fmt + typos).
+# Heavier compile/lint checks run in the pre-push hook.
+#
+# Installed automatically by cargo-husky on `cargo test`
+# (dev-dependency declared in apps/brush-app/Cargo.toml).
+# Skip once with: git commit --no-verify
+set -eu
+
+echo "pre-commit: cargo fmt --all -- --check"
+cargo fmt --all -- --check
+
+# Mirrors the `typos` CI job (.github/workflows/spelling_and_links.yml).
+if command -v typos >/dev/null 2>&1; then
+    echo "pre-commit: typos"
+    typos
+else
+    echo "pre-commit: typos not installed, skipping (cargo install typos-cli)"
+fi

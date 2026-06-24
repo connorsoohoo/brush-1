@@ -1,0 +1,26 @@
+#!/bin/sh
+# Pre-push checks: compile + lint, mirroring the CI "Format + check" and
+# "Check wasm32" jobs (.github/workflows/ci.yml). The full test suite and
+# cargo-deny stay in CI to keep pushes reasonably fast.
+#
+# Installed automatically by cargo-husky on `cargo test`
+# (dev-dependency declared in apps/brush-app/Cargo.toml).
+# Skip once with: git push --no-verify
+set -eu
+
+# Match CI: deny rustc and rustdoc warnings.
+export RUSTFLAGS="-D warnings"
+export RUSTDOCFLAGS="-D warnings"
+
+run() {
+    echo "pre-push: $*"
+    "$@"
+}
+
+run cargo fmt --all -- --check
+run cargo check --locked --workspace --all-features --all-targets
+run cargo check --locked --workspace --no-default-features --all-targets
+run cargo doc --workspace --no-deps --all-features
+run cargo doc --workspace --document-private-items --no-deps --all-features
+run cargo clippy --workspace --all-targets --all-features -- -D warnings
+run cargo check --locked -p brush-app -p brush-js --lib --target wasm32-unknown-unknown
