@@ -1,0 +1,52 @@
+<svg width="760" height="280" viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Rotating spherical-harmonic color when a splat is rotated</title>
+<desc>Applying rotation R to a splat must also rotate its spherical-harmonic color coefficients band by band so view-dependent highlights stay correct. Band 0 (DC) is invariant and copied. Band 1 rotates like a vector (apply R). Bands two and up use the Wigner-D / Ivanic-Ruedenberg recursion. Brush has none of this today; it is the crux of the port.</desc>
+<style>
+  text { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .t  { font-size: 14px; fill: #1f2937; }
+  .ts { font-size: 12px; fill: #6b7280; }
+  .th { font-size: 14px; font-weight: 600; fill: #1f2937; }
+  rect.box { fill: #f3f4f6; stroke: #cbd5e1; stroke-width: 1; }
+  .arr { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
+  .c-blue rect  { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.2; }
+  .c-blue text  { fill: #1e3a8a; }
+  .c-amber rect { fill: #fef3c7; stroke: #d97706; stroke-width: 1.2; }
+  .c-amber text { fill: #92400e; }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
+</defs>
+<rect x="0" y="0" width="760" height="280" fill="#ffffff"/>
+
+<!-- R input -->
+<g><rect class="box" x="28" y="104" width="150" height="64" rx="6"/>
+  <text class="th" x="103" y="132" text-anchor="middle">Rotation R</text>
+  <text class="ts" x="103" y="150" text-anchor="middle">(from T)</text>
+</g>
+
+<!-- bands -->
+<g class="c-blue"><rect x="228" y="34" width="352" height="44" rx="6"/><text class="t" x="404" y="61" text-anchor="middle">Band 0 / DC — invariant (copy through)</text></g>
+<g class="c-amber"><rect x="228" y="106" width="352" height="44" rx="6"/><text class="t" x="404" y="133" text-anchor="middle">Band 1 — rotates like a vector (apply R)</text></g>
+<g class="c-amber"><rect x="228" y="178" width="352" height="44" rx="6"/><text class="t" x="404" y="205" text-anchor="middle">Bands ≥2 — Wigner-D / Ivanic-Ruedenberg recursion</text></g>
+
+<!-- output -->
+<g class="c-amber"><rect x="620" y="104" width="120" height="64" rx="6"/>
+  <text class="th" x="680" y="130" text-anchor="middle">Rotated SH</text>
+  <text class="ts" x="680" y="148" text-anchor="middle">color stays correct</text>
+</g>
+
+<!-- R -> bands -->
+<line class="arr" x1="178" y1="130" x2="228" y2="58" marker-end="url(#arrow)"/>
+<line class="arr" x1="178" y1="136" x2="228" y2="128" marker-end="url(#arrow)"/>
+<line class="arr" x1="178" y1="142" x2="228" y2="198" marker-end="url(#arrow)"/>
+<!-- bands -> output -->
+<line class="arr" x1="580" y1="58" x2="620" y2="126" marker-end="url(#arrow)"/>
+<line class="arr" x1="580" y1="128" x2="620" y2="134" marker-end="url(#arrow)"/>
+<line class="arr" x1="580" y1="198" x2="620" y2="146" marker-end="url(#arrow)"/>
+
+<!-- legend -->
+<g class="c-blue"><rect x="228" y="246" width="14" height="14" rx="3"/></g>
+<text class="ts" x="250" y="257">free — no-op</text>
+<g class="c-amber"><rect x="372" y="246" width="14" height="14" rx="3"/></g>
+<text class="ts" x="394" y="257">must implement (Brush lacks it)</text>
+</svg>

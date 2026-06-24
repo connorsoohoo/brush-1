@@ -1,0 +1,64 @@
+<svg width="660" height="330" viewBox="0 0 660 330" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>The ICP inner loop</title>
+<desc>Iterative Closest Point refinement. Starting from a coarse transform, it finds correspondences by nearest neighbor (KD-tree), solves the best-fit transform by Umeyama/SVD, applies it, and checks convergence. If not converged it loops back to re-find correspondences; once the RMSE change is small it outputs the refined transform.</desc>
+<style>
+  text { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .t  { font-size: 14px; fill: #1f2937; }
+  .ts { font-size: 12px; fill: #6b7280; }
+  .th { font-size: 14px; font-weight: 600; fill: #1f2937; }
+  .lbl { font-size: 12px; font-weight: 600; fill: #475569; }
+  rect.box { fill: #f3f4f6; stroke: #cbd5e1; stroke-width: 1; }
+  .arr { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
+  .c-amber rect { fill: #fef3c7; stroke: #d97706; stroke-width: 1.2; }
+  .c-amber text { fill: #92400e; }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
+</defs>
+<rect x="0" y="0" width="660" height="330" fill="#ffffff"/>
+
+<!-- init -->
+<g><rect class="box" x="28" y="52" width="130" height="56" rx="6"/>
+  <text class="th" x="93" y="78" text-anchor="middle">Coarse T</text>
+  <text class="ts" x="93" y="96" text-anchor="middle">from global</text>
+</g>
+
+<!-- find matches -->
+<g class="c-amber"><rect x="200" y="52" width="180" height="56" rx="6"/>
+  <text class="th" x="290" y="78" text-anchor="middle">Find matches</text>
+  <text class="ts" x="290" y="96" text-anchor="middle">nearest-nbr · KD-tree</text>
+</g>
+
+<!-- solve -->
+<g class="c-amber"><rect x="440" y="52" width="180" height="56" rx="6"/>
+  <text class="th" x="530" y="78" text-anchor="middle">Solve T</text>
+  <text class="ts" x="530" y="96" text-anchor="middle">Umeyama / SVD</text>
+</g>
+
+<!-- apply -->
+<g class="c-amber"><rect x="440" y="190" width="180" height="56" rx="6"/>
+  <text class="th" x="530" y="216" text-anchor="middle">Apply T</text>
+  <text class="ts" x="530" y="234" text-anchor="middle">to source cloud</text>
+</g>
+
+<!-- converged? -->
+<g><rect class="box" x="200" y="190" width="180" height="56" rx="6"/>
+  <text class="th" x="290" y="216" text-anchor="middle">Converged?</text>
+  <text class="ts" x="290" y="234" text-anchor="middle">ΔRMSE small</text>
+</g>
+
+<!-- done -->
+<g class="c-amber"><rect x="200" y="276" width="180" height="40" rx="6"/>
+  <text class="t" x="290" y="301" text-anchor="middle">Refined T — done</text>
+</g>
+
+<!-- cycle arrows -->
+<line class="arr" x1="158" y1="80" x2="200" y2="80" marker-end="url(#arrow)"/>
+<line class="arr" x1="380" y1="80" x2="440" y2="80" marker-end="url(#arrow)"/>
+<line class="arr" x1="530" y1="108" x2="530" y2="190" marker-end="url(#arrow)"/>
+<line class="arr" x1="440" y1="218" x2="380" y2="218" marker-end="url(#arrow)"/>
+<line class="arr" x1="290" y1="190" x2="290" y2="108" marker-end="url(#arrow)"/>
+<text class="lbl" x="300" y="152">no — iterate</text>
+<line class="arr" x1="290" y1="246" x2="290" y2="276" marker-end="url(#arrow)"/>
+<text class="lbl" x="300" y="266">yes</text>
+</svg>
