@@ -1,0 +1,17 @@
+# Pin the Rust toolchain so local builds match CI and the cargo-husky pre-push
+# hook (`cargo check`) passes without `--no-verify`.
+#
+# Why 1.95.0:
+#   - matches .github/workflows/ci.yml (which uses 1.95.0)
+#   - `burn` 0.22.0-pre.1 requires rustc >= 1.95
+# rustup auto-installs this channel, the components, and the targets below on the
+# first cargo invocation, so a fresh clone (or a worktree whose default `stable`
+# is behind) builds without a manual `rustup update`/`rustup target add`.
+#
+# wasm32-unknown-unknown is required by the cargo-husky pre-push hook's final
+# step (`cargo check -p brush-app -p brush-js --target wasm32-unknown-unknown`,
+# mirroring CI's "Check wasm32" job).
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
