@@ -12,7 +12,7 @@ could pick up — with teaching diagrams for the two ideas that make it tractabl
 > with Rust, 3D geometry, and 3DGS; ranges are wide on purpose.
 
 > 📖 Most vocabulary (SfM, 3DGS, pose encoding, extrinsics…) is defined in the
-> [comparison doc's glossary](vggt-omega-vs-brush.md#9-glossary). This doc's [§6 Glossary](#6-glossary)
+> [comparison doc's glossary](vggt-omega-vs-brush.md#10-glossary). This doc's [§6 Glossary](#6-glossary)
 > adds only the *implementation* terms (format loader, golden test, ingestion seam…).
 
 ---
@@ -150,7 +150,7 @@ separate initiatives.
 
 ## 5. Risks specific to the chain
 
-The full risk list is in the [comparison doc §7](vggt-omega-vs-brush.md#7-gaps-mismatches--risks). The
+The full risk list is in the [comparison doc §8](vggt-omega-vs-brush.md#8-gaps-mismatches--risks). The
 chain-specific ones:
 
 - **Convention drift (PR3)** — top risk; fails silently. Mitigated by routing PR1 through COLMAP and by
@@ -166,7 +166,7 @@ chain-specific ones:
 ## 6. Glossary
 
 Implementation terms specific to this plan. Shared 3D/ML vocabulary lives in the
-[comparison doc glossary](vggt-omega-vs-brush.md#9-glossary).
+[comparison doc glossary](vggt-omega-vs-brush.md#10-glossary).
 
 - **Option A / B / C** — the three integration depths from the comparison doc: A = offline COLMAP export
   (no Brush code), B = native `vggt.rs` loader, C = in-engine inference (deferred). This plan executes

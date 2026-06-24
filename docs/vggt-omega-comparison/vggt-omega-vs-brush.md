@@ -3,18 +3,22 @@
 **Status:** Comparison / scoping notes (not a build plan)
 **Last updated:** 2026-06-23
 **Goal:** Pin down how the **VGGT-Omega** paper/model relates to **Brush** — competitor, replacement, or
-complement — and what wiring the two together would actually involve.
+complement — and what wiring the two together would actually involve. [§5](#5-wristworld-synthesizing-a-wrist-camera)
+folds in **WristWorld**, a VGGT-family model that *generates* a wrist-camera view — the robotics angle on
+"what feeds the splat."
 
 > All **Brush** claims are `file:line`-cited from the local checkout, read 2026-06-23 (line numbers
-> drift). All **VGGT-Omega** claims are from the local `facebookresearch/vggt-omega` clone
-> (`../../../vggt-omega`, sibling of the `brush` repo) + its README and arXiv 2605.15195, read
-> 2026-06-23. See [§10](#10-sources--references).
+> drift). **VGGT-Omega** claims are from the local `facebookresearch/vggt-omega` clone
+> (`../../../vggt-omega`, sibling of the `brush` repo) + its README and arXiv 2605.15195.
+> **WristWorld** claims ([§5](#5-wristworld-synthesizing-a-wrist-camera)) are from arXiv 2510.07313 + its
+> project page + repo (no local clone — paper/page-cited, not `file:line`). All read 2026-06-23.
+> See [§11](#11-sources--references).
 
 > Companion to the registration / PlanarGS-port notes in the sibling planning repo: all three are about
 > Brush's **geometry front-end and what feeds it**. Registration aligns two *finished* splats; this doc
 > is about what produces the *cameras + points* a splat is trained from.
 
-> 📖 New to SfM / feed-forward 3D / 3DGS / pose encodings? Jump to [§9 Glossary](#9-glossary).
+> 📖 New to SfM / feed-forward 3D / 3DGS / pose encodings / 4D world models? Jump to [§10 Glossary](#10-glossary).
 
 ![Two paradigms, one pipeline: unposed images go through a front-end (COLMAP or VGGT-Omega) that produces poses + intrinsics + a point cloud; Brush then optimizes that into a photorealistic splat.](vggt-omega-vs-brush.svg)
 
@@ -42,10 +46,15 @@ for Brush, replacing the COLMAP step Brush depends on today?"**
 
 **Recommendation:** treat VGGT-Omega as an **optional pose/point-cloud front-end** for Brush. Brush
 already hard-depends on an external poser (COLMAP / Nerfstudio / RealityCapture) and does **no** pose
-estimation or refinement of its own ([§2.2](#22-brush-the-optimization-back-end)). VGGT-Omega fills
+estimation or refinement of its own ([§2.2](#22-brush--the-optimization-back-end)). VGGT-Omega fills
 exactly that slot, in seconds instead of minutes-to-hours, and — crucially — it can **export COLMAP
-format** ([§10](#10-sources--references)), so the cheapest integration needs *zero* Brush code changes.
-The decision that remains is **how deep** to integrate ([§6](#6-integration-options--the-real-decision)).
+format** ([§11](#11-sources--references)), so the cheapest integration needs *zero* Brush code changes.
+The decision that remains is **how deep** to integrate ([§7](#7-integration-options--the-real-decision)).
+
+> **Robotics note.** If your capture is a robot *manipulation* scene, a fourth, *generative* option
+> enters: **WristWorld** *synthesizes* a wrist-camera view from third-person video. VGGT-family like
+> VGGT-Omega, but it **invents pixels** — a different risk class. See
+> [§5](#5-wristworld-synthesizing-a-wrist-camera).
 
 ---
 
@@ -200,11 +209,110 @@ Most LiDAR iPhone apps are the second kind; which one SplatKing is sets the "pos
   gap; VGGT poses can **cross-check** ARKit poses (disagreement flags drift).
 - **Convention gotcha.** ARKit is Y-up / right-handed (camera looks down −Z); COLMAP is Y-down / +Z. The
   exporter must get that inversion right — the same silent `w2c→c2w` trap as the rest of
-  [§7](#7-gaps-mismatches--risks).
+  [§8](#8-gaps-mismatches--risks).
 
 ---
 
-## 5. Where they meet — the integration surface
+## 5. WristWorld: synthesizing a wrist camera
+
+§2–§4 covered front-ends that **estimate** geometry from **real** images (COLMAP, VGGT-Omega, SplatKing).
+**WristWorld** ([arXiv 2510.07313](https://arxiv.org/abs/2510.07313), Qian et al. 2025;
+[repo](https://github.com/XuWuLingYu/WristWorld)) is a different animal: it **generates** a camera
+viewpoint that was never physically captured — a robot **wrist view** — from third-person video alone. It
+shares VGGT's trunk with VGGT-Omega, so it belongs in this doc; but the wrist *pixels* it invents are
+**not** a camera observation, and that distinction is the whole story for splatting.
+
+> **Honesty up front.** WristWorld is a **world model for VLA (robot-policy) training** — it never
+> mentions 3DGS, NeRF, or rendering. *"Feed the wrist view into Brush"* is **our** integration thesis,
+> assessed here on its merits, **not** a claim the paper makes.
+
+![Anchor (third-person) video feeds WristWorld, a VGGT-family 4D world model. Stage 1 (Reconstruction) extends VGGT with a wrist head and a Spatial Projection Consistency loss and outputs a wrist pose plus a 4D point cloud — real estimated geometry, shown green. Stage 1 projects its cloud into the wrist view to condition Stage 2 (Generation), a video diffusion transformer that outputs a synthesized wrist-view video — generated pixels, shown rose. The pose and point cloud feed Brush as safe real geometry; the generated frames feed Brush only as an unverified extra camera, flagged for hallucination and a static-vs-dynamic mismatch since Brush is a static 3DGS trainer with frozen poses. Brush outputs a photorealistic splat.](wristworld-splat-augmentation.svg)
+
+*WristWorld's Stage 1 (wrist pose + 4D point cloud) is real, estimated geometry — a legitimate
+VGGT-family front-end output. Its Stage 2 (generated wrist video) is invented pixels; feeding them to
+Brush risks floaters, and the moving manipulation scene fights Brush's static splat. Source:
+[`wristworld-splat-augmentation.svg`](wristworld-splat-augmentation.svg).*
+
+### 5.1. What WristWorld is
+
+The problem it targets: robot datasets have **abundant anchor (third-person) views but scarce wrist
+views**, yet wrist views capture the fine hand–object interaction that improves manipulation policies.
+Prior world models need a wrist-view *first frame* to roll out; WristWorld is the first to produce wrist
+views from anchor views **alone**. Two stages:
+
+- **Stage 1 — Reconstruction.** Extends VGGT with a **wrist head** and a **Spatial Projection Consistency
+  (SPC) loss** to predict a geometrically consistent **wrist pose** and **4D point cloud**. SPC supervises
+  *directly from RGB* (no depth/extrinsics labels); the predicted wrist pose **projects the point cloud
+  into the wrist view.** → *real, estimated geometry.*
+- **Stage 2 — Generation.** A **video diffusion transformer (DiT)** synthesizes a temporally coherent
+  **wrist-view video**, conditioned on Stage 1's **wrist-view projection maps** + **CLIP-encoded
+  anchor-view semantics**. No wrist first frame required. → *generated pixels.*
+- **I/O:** anchor RGB video in → wrist-view video out (plus Stage 1's pose + 4D cloud).
+- **Reported results:** SOTA wrist-view generation (↓ FVD; ↑ LPIPS/SSIM/PSNR); **+3.81%** average
+  task-completion length on Calvin; **closes 42.4%** of the anchor–wrist view gap. Benchmarks: **Droid,
+  Calvin, real Franka Panda.**
+
+### 5.2. Two hooks into Brush — very different risk
+
+WristWorld offers Brush **two separable** things, and conflating them is the trap:
+
+| Hook | What Brush gets | Trust | Verdict |
+|---|---|---|---|
+| **Stage 1** — wrist pose + 4D point cloud | another **VGGT-family front-end**, like VGGT-Omega but tuned to recover a *wrist* viewpoint + manipulation-scene geometry | real estimated geometry | **the trustworthy half** — same integration surface as VGGT-Omega ([§6](#6-where-they-meet--the-integration-surface)) |
+| **Stage 2** — generated wrist video | **synthetic extra training views** — denser coverage of the hand–object region a fixed camera sees poorly | invented pixels | **speculative** — gate behind validation; never freeze as ground truth |
+
+**The headline: the wrist *pose* is real geometry; the wrist *pixels* are generated.** Use the former
+freely; treat the latter as a hypothesis to be tested, not an observation.
+
+### 5.3. The "wrist camera in the splat" idea — and why to be careful
+
+The appealing version: add Stage-2 wrist frames + their poses as extra cameras alongside the real anchor
+frames → more viewpoints, especially close-up. Robotic captures are viewpoint-poor (often one fixed
+camera); splats are viewpoint-hungry. Four reasons it is **not** a drop-in, worst first:
+
+1. **3DGS fits *every* training pixel.** Hallucinated wrist detail → the optimizer manufactures geometry
+   (floaters/fog) to satisfy it. This is different *in kind* from VGGT-Omega, which never invents pixels —
+   it only mis-estimates the poses of real ones.
+2. **Multi-view photometric consistency is the load-bearing 3DGS assumption.** WristWorld guarantees
+   *temporal* coherence, not sub-pixel *cross-view* agreement with the anchor cameras. Inconsistency →
+   blur, not detail.
+3. **Dynamic 4D scene vs. static Brush.** WristWorld targets *manipulation* — a moving arm + objects.
+   Brush is a **static** 3DGS trainer: no time axis, poses frozen
+   (`crates/brush-train/src/train.rs:167`). Moving-scene frames → ghosting. The augmentation only helps
+   the *static* backdrop unless Brush gains a dynamic-3DGS extension it does not have today. (A
+   representation mismatch, not a tuning knob.)
+4. **Scale & registration.** Up-to-scale like VGGT-Omega ([§8](#8-gaps-mismatches--risks)), *plus* the
+   generated views must land in the **same** frame as the anchors.
+
+### 5.4. If you pursue it — the defensible path
+
+- **Use Stage 1 before Stage 2.** Treat WristWorld's reconstruction (wrist pose + 4D cloud) as a
+  robotics-tuned VGGT front-end → identical integration surface and COLMAP bridge as VGGT-Omega
+  ([§6](#6-where-they-meet--the-integration-surface)). You get a real, well-placed virtual camera
+  *position* without trusting a single generated pixel.
+- **If you use Stage-2 pixels, down-weight them.** A second, independent argument for **pose refinement +
+  per-view loss weighting** (the [PR5](vggt-omega-integration-plan.md) thread): treat generated views as
+  *soft, refinable* evidence. The confidence-weighting idea from the depth-loss plan
+  ([PR6](vggt-omega-integration-plan.md)) generalizes to "trust generated views less."
+- **Mask the motion.** Let the wrist view supervise only the *static* regions (mask the moving
+  arm/object) — sidesteps the 4D mismatch.
+- **Validate like [PR1](vggt-omega-integration-plan.md).** Same go/no-go discipline: does adding wrist
+  views *raise* held-out novel-view quality, or just add floaters? Measure before believing.
+
+### 5.5. Why this matters here
+
+- **It's a VGGT *family*, not one model.** VGGT-Omega and WristWorld are two heads on the same trunk;
+  "VGGT as Brush's front-end" is a lineage to track, not a one-off.
+- **It re-motivates pose refinement.** Drifty on-device poses argued for pose refinement
+  ([§4.3](#43-what-this-changes)); uncertain *generated* views argue for it again — a second constituency
+  for the same feature.
+- **It's where robotics changes the call.** This is the first place the repo's robotics context actually
+  bears on the recommendation: WristWorld earns its keep only if you care about *manipulation* scenes and
+  wrist viewpoints — for general capture, VGGT-Omega / SplatKing dominate.
+
+---
+
+## 6. Where they meet — the integration surface
 
 VGGT-Omega's outputs map almost 1:1 onto what Brush's loader already expects:
 
@@ -221,7 +329,7 @@ integration and polish.
 
 ---
 
-## 6. Integration options — the real decision
+## 7. Integration options — the real decision
 
 Three depths, cheapest first. These are *not* mutually exclusive — (A) is the spike that de-risks (B/C).
 
@@ -237,7 +345,7 @@ Brush's "no-CUDA, runs-everywhere-incl-WASM" identity (`README.md`), so it needs
 
 ---
 
-## 7. Gaps, mismatches & risks
+## 8. Gaps, mismatches & risks
 
 - **Coordinate/convention drift (top risk, fails silently).** Extrinsics, quaternion handedness,
   world-vs-camera direction, and Y-up/Z-up must match Brush's expectations exactly. Routing through
@@ -261,7 +369,7 @@ Brush's "no-CUDA, runs-everywhere-incl-WASM" identity (`README.md`), so it needs
 
 ---
 
-## 8. Open questions / investigation TODOs
+## 9. Open questions / investigation TODOs
 
 - [ ] Run **Option A** on a real capture: are VGGT-Omega poses good enough that Brush converges to
       COLMAP-comparable quality? (The decision hinges on this.)
@@ -276,9 +384,19 @@ Brush's "no-CUDA, runs-everywhere-incl-WASM" identity (`README.md`), so it needs
 - [ ] What's the `text_alignment_embedding` good for in a Brush context (semantic/text-driven selection)
       — anything, or out of scope?
 
+WristWorld ([§5](#5-wristworld-synthesizing-a-wrist-camera)):
+- [ ] **Stage 1 alone:** are WristWorld's wrist *poses* + 4D cloud accurate enough to serve as a
+      VGGT-family front-end for *manipulation* scenes — the safe, non-generative use?
+- [ ] **Generated-view augmentation:** does adding Stage-2 wrist frames to a Brush capture *raise*
+      held-out novel-view PSNR, or just add floaters? (The go/no-go, mirroring PR1.)
+- [ ] **Static-region masking:** can masking the moving arm/object make Stage-2 augmentation net-positive
+      despite the 4D-vs-static mismatch?
+- [ ] **Registration & scale:** do WristWorld's wrist poses land in the *same* metric frame as the anchor
+      cameras, or is an alignment step needed?
+
 ---
 
-## 9. Glossary
+## 10. Glossary
 
 Grouped by area. **(VGGT)** marks VGGT-Omega-specific terms; **(Brush)** marks Brush-specific ones.
 
@@ -341,14 +459,42 @@ Grouped by area. **(VGGT)** marks VGGT-Omega-specific terms; **(Brush)** marks B
 - **OIS / autofocus drift** — optical image stabilization and autofocus move the lens, so intrinsics can
   shift frame-to-frame; capture apps often lock AE/AF to keep them stable.
 
+### Generative wrist-view synthesis (WristWorld)
+- **WristWorld** — a two-stage **4D world model** (Qian et al. 2025) that **generates** a robot
+  **wrist-view** video from **anchor (third-person)** video alone; shares VGGT's trunk with VGGT-Omega.
+  Relevant to Brush only as a *robotics-specific, generative* front-end — see
+  [§5](#5-wristworld-synthesizing-a-wrist-camera). **(WristWorld)**
+- **Anchor view** — a third-person / external camera view; abundant in robot datasets. WristWorld's
+  input. **(WristWorld)**
+- **Wrist view** — the camera mounted on/near the robot's end-effector; captures close-up hand–object
+  interaction; scarce in datasets. WristWorld's output viewpoint, and the "extra camera" this doc weighs
+  feeding to Brush. **(WristWorld)**
+- **4D world model** — a model of a scene over **space + time** (the "4th" dim) able to roll out novel
+  views. "4D" because manipulation scenes are *dynamic* — exactly what clashes with Brush's *static* 3DGS.
+  **(WristWorld)**
+- **SPC (Spatial Projection Consistency) loss** — WristWorld's Stage-1 supervision: enforces that the
+  predicted wrist pose **projects the point cloud consistently into the wrist view**, learned from RGB
+  only (no depth/extrinsics labels). What makes the Stage-1 geometry trustworthy. **(WristWorld)**
+- **Projection map** — Stage 1's point cloud rendered into the predicted wrist view; the geometric
+  conditioning signal for Stage 2's generator. **(WristWorld)**
+- **DiT (Diffusion Transformer)** — the transformer-based video diffusion model in Stage 2 that
+  synthesizes the wrist-view video. Source of the *generated* (not observed) pixels. **(WristWorld)**
+- **VLA (Vision-Language-Action) model** — a robot policy mapping images + a language instruction to
+  actions; WristWorld's wrist views are meant to improve VLA training. *Not* a splatting concept — it's
+  why WristWorld exists, and a flag that its goals differ from Brush's. **(WristWorld)**
+- **FVD (Fréchet Video Distance)** — a video-generation quality metric (lower = better); WristWorld's
+  headline generation result. **(WristWorld)**
+
 ---
 
-## 10. Sources & references
+## 11. Sources & references
 
 ### How these claims were derived
 **Brush** `file:line` claims are from this worktree, read **2026-06-23** (line numbers drift).
 **VGGT-Omega** claims are from the local clone at `../../../vggt-omega` (sibling of `brush` in
 `robotics_research/`) plus its README and arXiv page, read **2026-06-23**.
+**WristWorld** claims are from arXiv 2510.07313 + its project page + GitHub repo (no local clone — so
+paper/page-cited, not `file:line`), read **2026-06-23**.
 
 ### Brush (this repo)
 - `crates/brush-dataset/src/formats/mod.rs:56-72` — supported formats + detection order (COLMAP →
@@ -410,3 +556,19 @@ Grouped by area. **(VGGT)** marks VGGT-Omega-specific terms; **(Brush)** marks B
   official max range; **~5 m is the commonly-observed practical limit**. See also an indoor
   LiDAR-vs-terrestrial-scanner comparison,
   [*South African Journal of Geomatics* (2024)](https://www.tandfonline.com/doi/full/10.1080/16874048.2024.2408839).
+
+### External (generative wrist-view synthesis / WristWorld)
+- **WristWorld** — Qian, Chi, Li, Wang, Qin, Ju, Han & Zhang, "WristWorld: Generating Wrist-Views via 4D
+  World Models for Robotic Manipulation," arXiv 2510.07313 (Oct 2025) —
+  [arxiv.org/abs/2510.07313](https://arxiv.org/abs/2510.07313) · project page
+  [wrist-world.github.io](https://wrist-world.github.io) · repo
+  [github.com/XuWuLingYu/WristWorld](https://github.com/XuWuLingYu/WristWorld). Two-stage 4D world model:
+  **Stage 1** extends VGGT with a wrist head + **Spatial Projection Consistency (SPC) loss** → wrist pose
+  + 4D point cloud (RGB-only supervision); **Stage 2** a video diffusion transformer (DiT) conditioned on
+  Stage-1 projection maps + CLIP anchor-view semantics → wrist-view video (no wrist first frame). Results:
+  SOTA generation (↓ FVD; ↑ LPIPS/SSIM/PSNR), **+3.81%** Calvin task-completion length, **closes 42.4%**
+  of the anchor–wrist gap. Benchmarks: **Droid, Calvin, Franka Panda**. **Note:** the paper does not
+  mention 3DGS / NeRF / rendering — the Brush integration in
+  [§5](#5-wristworld-synthesizing-a-wrist-camera) is *this doc's* thesis, not the paper's.
+- **VGGT** (the shared trunk) — already listed under [§11 External](#external); WristWorld and VGGT-Omega
+  are two heads on it.
