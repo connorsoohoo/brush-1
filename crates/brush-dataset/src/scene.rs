@@ -19,6 +19,7 @@ pub struct SceneView {
     pub image: LoadImage,
     pub camera: Camera,
     pub depth: Option<LoadDepth>,
+    pub image_size: glam::UVec2,
 }
 
 // Encapsulates a multi-view scene including cameras and the splats.
@@ -67,6 +68,7 @@ impl Scene {
                 image: v.image.with_scale(scale),
                 camera: v.camera,
                 depth: v.depth,
+                image_size: v.image_size,
             })
             .collect();
         Self::new(views)

@@ -200,6 +200,7 @@ async fn read_transforms_file(
             (Some(w), Some(h)) => (w as u32, h as u32),
             _ => image.dimensions().await?,
         };
+        let image_size = glam::uvec2(w, h);
 
         let camera_model = resolve_camera_model(
             frame
@@ -264,6 +265,7 @@ async fn read_transforms_file(
             image,
             camera,
             depth: None,
+            image_size,
         };
         results.push(view);
     }
