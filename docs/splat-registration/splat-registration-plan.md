@@ -7,7 +7,7 @@ coordinate frame, then merge) to the Brush Rust/WebGPU engine — the capability
 [GaussianSplattingRegistration](https://github.com/erikszasz/GaussianSplattingRegistration)
 (a Python/Open3D/Qt desktop tool), but built natively in Rust.
 
-> Companion to [`docs/planargs-port-plan.md`](../docs/planargs-port-plan.md). Same conventions:
+> Companion to [`docs/planargs-port/planargs-port-plan.md`](../planargs-port/planargs-port-plan.md). Same conventions:
 > effort numbers are for **one strong engineer** comfortable with Rust, 3D geometry, and 3DGS;
 > ranges are wide on purpose; all Brush/external claims are backed by `file:line` citations in
 > [§12](#12-sources--references), derived from the local `brush` checkout and the
@@ -20,9 +20,9 @@ coordinate frame, then merge) to the Brush Rust/WebGPU engine — the capability
 > 📖 New to the registration vocabulary (ICP, FPFH, RANSAC, Umeyama, SH rotation)? Jump to
 > [§13 Glossary](#13-glossary).
 
-![Splat registration in one picture: two splats in different coordinate frames, solve for the transform T (global then ICP), then aligned and merged.](diagrams/concept.svg)
+![Splat registration in one picture: two splats in different coordinate frames, solve for the transform T (global then ICP), then aligned and merged.](concept.svg)
 
-*The whole idea in one picture; the rest of the doc is detail. (Diagrams live in [`diagrams/`](diagrams/) as portable SVG + PNG.)*
+*The whole idea in one picture; the rest of the doc is detail. (Diagrams live alongside this doc as portable SVG + PNG.)*
 
 ---
 
@@ -50,7 +50,7 @@ the reference tool barely can — Brush *is* a differentiable splat optimizer, s
 exists you can optimize the 6–7 DoF transform with the training stack you already have. Treat it as
 the differentiator, not the foundation (it can't bootstrap itself from an arbitrary pose).
 
-![Computing the transform T: geometric versus photometric, with the recommended hybrid.](diagrams/decision.svg)
+![Computing the transform T: geometric versus photometric, with the recommended hybrid.](decision.svg)
 
 *The central decision: a geometric CPU core, with photometric refine as Brush's optional differentiator.*
 
@@ -197,7 +197,7 @@ A new leaf crate keeps the renderer/trainer clean. Suggested: **`crates/brush-re
 
 The phases below build this pipeline (Scope A solid; the Scope B refine is dashed):
 
-![Splat registration pipeline: extract clouds, downsample, global registration, ICP with a multiscale loop, apply T with SH rotation, merge, evaluate; plus the optional Scope B photometric refine.](diagrams/pipeline.svg)
+![Splat registration pipeline: extract clouds, downsample, global registration, ICP with a multiscale loop, apply T with SH rotation, merge, evaluate; plus the optional Scope B photometric refine.](pipeline.svg)
 
 ### M0 — Spike & decision (≈3–5 days)
 - Confirm **geometric-core** decision and the CPU choice; pick deps (`nalgebra`, `kiddo`).
@@ -251,7 +251,7 @@ Rotating a splat by `R` requires rotating its real-SH color coefficients band-by
   band-1 rotation). Well-trodden in graphics PRT; ~100–150 LOC, fully unit-testable in isolation
   (rotate, render, compare; or rotate-by-identity = no-op; rotate-then-inverse = identity).
 
-![Rotating SH color band by band: band 0 invariant, band 1 vector-like, bands two-and-up via the Wigner-D / Ivanic-Ruedenberg recursion.](diagrams/sh-rotation.svg)
+![Rotating SH color band by band: band 0 invariant, band 1 vector-like, bands two-and-up via the Wigner-D / Ivanic-Ruedenberg recursion.](sh-rotation.svg)
 
 **Risk:** SH **basis convention mismatch** (ordering, sign, normalization, Y-up vs Z-up) silently
 produces wrong colors with no error. Mitigate by deriving the rotation in Brush's exact convention and
@@ -265,7 +265,7 @@ testing `rotate(R)` against re-rendering a known splat from a rotated camera.
 - **Point-to-plane step:** minimize `Σ((R·pᵢ+t−qᵢ)·nᵢ)²`; linearize rotation (small-angle) → 6×6 normal
   equations per iteration; tighter fits on surface-like splats (which these are).
 
-![The ICP inner loop: find correspondences (KD-tree), solve T by SVD, apply, check convergence, repeat.](diagrams/icp-loop.svg)
+![The ICP inner loop: find correspondences (KD-tree), solve T by SVD, apply, check convergence, repeat.](icp-loop.svg)
 
 Everything here is classic and CPU; the only "new physics" for Brush is **8a**.
 
