@@ -142,7 +142,17 @@ fn decode_bin_depth(
         )));
     }
 
-    let mut depth: Vec<f32> = bytemuck::pod_collect_to_vec(depth_bytes);
+    let mut depth = vec![0.0f32; SRC_W * SRC_H];
+    for i in 0..(SRC_W * SRC_H) {
+        let offset = i * 4;
+        let bytes = [
+            depth_bytes[offset],
+            depth_bytes[offset + 1],
+            depth_bytes[offset + 2],
+            depth_bytes[offset + 3],
+        ];
+        depth[i] = f32::from_le_bytes(bytes);
+    }
 
     // Replace NaNs with 0.0 before upscaling to prevent propagation
     for d in depth.iter_mut() {

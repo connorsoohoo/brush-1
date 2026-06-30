@@ -171,7 +171,7 @@ async fn load_dataset_inner(
         // If metric depth maps are present, recover that scale so poses + points line
         // up with the depth.
         let metric_scale = if load_args.estimate_metric_scale {
-            let scale = estimate_metric_scale(
+            match estimate_metric_scale(
                 &vfs,
                 &img_info_list,
                 &cam_model_data,
@@ -179,9 +179,16 @@ async fn load_dataset_inner(
                 &load_args,
             )
             .await
-            .expect("estimate metric scale failed");
-            log::info!("Rescaling colmap reconstruction to metric depth (scale = {scale})");
-            Some(scale)
+            {
+                Some(scale) if !scale.is_nan() && !scale.is_infinite() => {
+                    log::info!("Rescaling colmap reconstruction to metric depth (scale = {scale})");
+                    Some(scale)
+                }
+                _ => {
+                    log::warn!("Could not estimate metric scale (no 2D-3D points matched). Poses and points will remain at original scale.");
+                    None
+                }
+            }
         } else {
             None
         };
@@ -468,9 +475,11 @@ async fn estimate_metric_scale(
 
     for img in images {
         let Some(point_data) = &img.points else {
+            log::info!("Image {} skipped: no point data", img.name);
             continue;
         };
         let Some(image_path) = find_image_by_name(vfs, &img.name) else {
+            log::info!("Image {} skipped: image file not found in VFS", img.name);
             continue;
         };
         let Some(depth_path) = find_depth_path(
@@ -479,9 +488,19 @@ async fn estimate_metric_scale(
             &load_args.depth_dir_name,
             &load_args.depth_format,
         ) else {
+            log::info!(
+                "Image {} skipped: depth path not found in VFS (looking for dir '{}')",
+                img.name,
+                load_args.depth_dir_name
+            );
             continue;
         };
         let Some(cam) = cameras.get(&img.camera_id) else {
+            log::info!(
+                "Image {} skipped: camera ID {} not found",
+                img.name,
+                img.camera_id
+            );
             continue;
         };
 
@@ -496,11 +515,24 @@ async fn estimate_metric_scale(
             DepthFormat::Tiff
         };
         let depth_loader = LoadDepth::new(vfs.clone(), depth_path.to_path_buf(), format);
-        let Ok(depth) = depth_loader.load_vec(height, width).await else {
-            continue;
+        let depth = match depth_loader.load_vec(height, width).await {
+            Ok(d) => d,
+            Err(e) => {
+                log::info!(
+                    "Image {} skipped: failed to load depth vector: {:?}",
+                    img.name,
+                    e
+                );
+                continue;
+            }
         };
 
+        log::info!("Successfully loaded depth vector for image {}", img.name);
+
+        let mut image_pts = 0;
+        let mut matched_pts = 0;
         for (xy, &pid) in point_data.xys.iter().zip(point_data.point3d_ids.iter()) {
+            image_pts += 1;
             if pid < 0 {
                 continue;
             }
@@ -520,9 +552,20 @@ async fn estimate_metric_scale(
             if expected_depth <= 0.0 || expected_depth.is_nan() || colmap_depth <= 0.0 {
                 continue;
             }
+            matched_pts += 1;
             accumulated_colmap_depth += colmap_depth;
             accumulated_dataset_depth += expected_depth;
         }
+        log::info!(
+            "Image {}: total points = {}, matched = {}",
+            img.name,
+            image_pts,
+            matched_pts
+        );
+    }
+
+    if accumulated_colmap_depth == 0.0 || accumulated_dataset_depth == 0.0 {
+        return None;
     }
 
     let scale = accumulated_dataset_depth / accumulated_colmap_depth;
