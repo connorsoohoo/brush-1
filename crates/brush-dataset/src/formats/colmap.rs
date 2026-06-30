@@ -11,6 +11,7 @@ use crate::{
     formats::{
         find_depth_path, find_image_by_name, find_mask_path, find_points3d_path, split_eval_every,
     },
+    load_depth::DepthFormat,
     scene::{LoadDepth, LoadImage, SceneView},
 };
 use brush_render::kernels::camera_model::CameraModel;
@@ -148,7 +149,9 @@ async fn load_dataset_inner(
     // parse and the points3d parse run concurrently on the same thread
     // (no cross-stream GPU concerns; this is pure CPU/I/O).
     let actor = brush_async::Actor::new("colmap-loader");
+    let load_args_dataset = load_args.clone();
     let dataset = actor.run(move || async move {
+        let load_args = load_args_dataset;
         let mut cam_file = vfs.reader_at_path(&cam_path).await?;
         let cam_model_data = colmap_reader::read_cameras(&mut cam_file, is_binary).await?;
         let cam_model_data = cam_model_data
@@ -168,9 +171,15 @@ async fn load_dataset_inner(
         // If metric depth maps are present, recover that scale so poses + points line
         // up with the depth.
         let metric_scale = if load_args.estimate_metric_scale {
-            let scale = estimate_metric_scale(&vfs, &img_info_list, &cam_model_data, &points_dir_)
-                .await
-                .expect("estimate metric scale failed");
+            let scale = estimate_metric_scale(
+                &vfs,
+                &img_info_list,
+                &cam_model_data,
+                &points_dir_,
+                &load_args,
+            )
+            .await
+            .expect("estimate metric scale failed");
             log::info!("Rescaling colmap reconstruction to metric depth (scale = {scale})");
             Some(scale)
         } else {
@@ -210,8 +219,22 @@ async fn load_dataset_inner(
             };
 
             let mask_path = find_mask_path(&vfs, path);
-            let depth =
-                find_depth_path(&vfs, path).map(|p| LoadDepth::new(vfs.clone(), p.to_path_buf()));
+            let depth = find_depth_path(
+                &vfs,
+                path,
+                &load_args.depth_dir_name,
+                &load_args.depth_format,
+            )
+            .map(|p| {
+                let format = if load_args.depth_format.eq_ignore_ascii_case("bin") {
+                    DepthFormat::Bin {
+                        min_confidence: load_args.depth_min_confidence,
+                    }
+                } else {
+                    DepthFormat::Tiff
+                };
+                LoadDepth::new(vfs.clone(), p.to_path_buf(), format)
+            });
 
             // Convert w2c to c2w.
             let world_to_cam = glam::Affine3A::from_rotation_translation(
@@ -420,10 +443,13 @@ async fn estimate_metric_scale(
     images: &[colmap_reader::Image],
     cameras: &HashMap<i32, ColmapCamera>,
     points_dir: &Path,
+    load_args: &LoadDatasetConfig,
 ) -> Option<f32> {
     let any_depth = images.iter().any(|img| {
         find_image_by_name(vfs, &img.name)
-            .and_then(|p| super::find_depth_path(vfs, p))
+            .and_then(|p| {
+                super::find_depth_path(vfs, p, &load_args.depth_dir_name, &load_args.depth_format)
+            })
             .is_some()
     });
     if !any_depth {
@@ -447,7 +473,12 @@ async fn estimate_metric_scale(
         let Some(image_path) = find_image_by_name(vfs, &img.name) else {
             continue;
         };
-        let Some(depth_path) = find_depth_path(vfs, image_path) else {
+        let Some(depth_path) = find_depth_path(
+            vfs,
+            image_path,
+            &load_args.depth_dir_name,
+            &load_args.depth_format,
+        ) else {
             continue;
         };
         let Some(cam) = cameras.get(&img.camera_id) else {
@@ -457,7 +488,14 @@ async fn estimate_metric_scale(
         let height = cam.height as usize;
         let width = cam.width as usize;
 
-        let depth_loader = LoadDepth::new(vfs.clone(), depth_path.to_path_buf());
+        let format = if load_args.depth_format.eq_ignore_ascii_case("bin") {
+            DepthFormat::Bin {
+                min_confidence: load_args.depth_min_confidence,
+            }
+        } else {
+            DepthFormat::Tiff
+        };
+        let depth_loader = LoadDepth::new(vfs.clone(), depth_path.to_path_buf(), format);
         let Ok(depth) = depth_loader.load_vec(height, width).await else {
             continue;
         };

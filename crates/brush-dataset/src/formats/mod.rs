@@ -199,20 +199,39 @@ fn find_points3d_path<'a>(vfs: &'a BrushVfs, points_dir: &'a Path) -> Option<(&'
 }
 
 /// Locate a per-image depth map.
-fn find_depth_path<'a>(vfs: &'a BrushVfs, path: &'a Path) -> Option<&'a Path> {
+pub(crate) fn find_depth_path<'a>(
+    vfs: &'a BrushVfs,
+    path: &'a Path,
+    depth_dir_name: &str,
+    depth_format: &str,
+) -> Option<&'a Path> {
     let search_name = path.file_name().expect("File must have a name");
     let search_stem = path.file_stem().expect("File must have a name");
+    let is_bin_format = depth_format.eq_ignore_ascii_case("bin");
 
     vfs.iter_files().find(|candidate| {
         let Some(stem) = candidate.file_stem() else {
             return false;
         };
-        if !(stem.eq_ignore_ascii_case(search_name) || stem.eq_ignore_ascii_case(search_stem)) {
+
+        let stem_str = stem.to_str().unwrap_or("");
+        let search_stem_str = search_stem.to_str().unwrap_or("");
+        let search_name_str = search_name.to_str().unwrap_or("");
+
+        let matches_stem = if is_bin_format {
+            stem_str.eq_ignore_ascii_case(&format!("{}_depth", search_stem_str))
+        } else {
+            stem_str.eq_ignore_ascii_case(search_name_str)
+                || stem_str.eq_ignore_ascii_case(search_stem_str)
+        };
+
+        if !matches_stem {
             return false;
         }
+
         let depth_idx = candidate
             .components()
-            .position(|c| c.as_os_str().eq_ignore_ascii_case("depth"));
+            .position(|c| c.as_os_str().eq_ignore_ascii_case(depth_dir_name));
         depth_idx.is_some_and(|idx| {
             let candidate_components: Vec<_> = candidate.components().collect();
             let path_dir_components: Vec<_> = path.parent().unwrap().components().collect();
