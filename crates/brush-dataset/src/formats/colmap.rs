@@ -517,7 +517,7 @@ async fn estimate_metric_scale(
             }
 
             let expected_depth = depth[v as usize * width + u as usize];
-            if expected_depth <= 0.0 || colmap_depth <= 0.0 {
+            if expected_depth <= 0.0 || expected_depth.is_nan() || colmap_depth <= 0.0 {
                 continue;
             }
             accumulated_colmap_depth += colmap_depth;

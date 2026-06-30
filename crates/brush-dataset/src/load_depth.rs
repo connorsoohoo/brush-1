@@ -144,6 +144,13 @@ fn decode_bin_depth(
 
     let mut depth: Vec<f32> = bytemuck::pod_collect_to_vec(depth_bytes);
 
+    // Replace NaNs with 0.0 before upscaling to prevent propagation
+    for d in depth.iter_mut() {
+        if d.is_nan() {
+            *d = 0.0;
+        }
+    }
+
     if let Some(conf) = confidence_bytes {
         if conf.len() == SRC_W * SRC_H {
             for i in 0..(SRC_W * SRC_H) {
