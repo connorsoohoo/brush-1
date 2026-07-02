@@ -1,0 +1,135 @@
+<svg width="980" height="640" viewBox="0 0 980 640" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>DIG-in-Brush architecture: offline DINO preprocessing feeding a two-pass Brush training loop</title>
+<desc>Left column: an offline Python preprocessing step runs DINOv2 on the dataset images, PCA-reduces features to 96 dims, and writes per-view feature files. These are loaded by brush-dataset alongside images and cameras. The training step in brush-train runs two rasterization passes: the existing RGB pass (differentiable through geometry and SH) and a new feature pass that rasterizes per-Gaussian 64-dim features with geometry detached. Rendered features are alpha-normalized, decoded by a small Burn MLP to 96 dims, and compared with the cached DINO features via MSE. Gradients flow to the per-Gaussian features and MLP only. Outputs are the trained splat, the feature table, and MLP weights.</desc>
+
+<style>
+  text { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .t  { font-size: 14px; fill: #1f2937; }
+  .ts { font-size: 11.5px; fill: #6b7280; }
+  .th { font-size: 14px; font-weight: 600; fill: #1f2937; }
+  .sec { font-size: 12px; font-weight: 700; fill: #475569; letter-spacing: 0.08em; }
+  rect.box { fill: #f3f4f6; stroke: #cbd5e1; stroke-width: 1; }
+  rect.zone { fill: none; stroke: #cbd5e1; stroke-width: 1; stroke-dasharray: 5 4; }
+  .arr { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
+  .arr-grad { stroke: #dc2626; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+  .tg { font-size: 11.5px; fill: #dc2626; }
+  .c-blue rect  { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.2; }
+  .c-blue text.th  { fill: #1e3a8a; }
+  .c-blue text.ts  { fill: #3b5aa0; }
+  .c-amber rect { fill: #fef3c7; stroke: #d97706; stroke-width: 1.2; }
+  .c-amber text.th { fill: #92400e; }
+  .c-amber text.ts { fill: #a16232; }
+</style>
+
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arrow-grad" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#dc2626" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<rect x="0" y="0" width="980" height="640" fill="#ffffff"/>
+
+<!-- ================ OFFLINE ZONE ================ -->
+<rect class="zone" x="20" y="34" width="240" height="330" rx="8"/>
+<text class="sec" x="36" y="58">OFFLINE (PYTHON, ONE-OFF)</text>
+
+<g><rect class="box" x="40" y="76" width="200" height="46" rx="6"/>
+  <text class="t" x="140" y="96" text-anchor="middle">Dataset images</text>
+  <text class="ts" x="140" y="112" text-anchor="middle">COLMAP / nerfstudio capture</text></g>
+
+<g class="c-amber"><rect x="40" y="152" width="200" height="60" rx="6"/>
+  <text class="th" x="140" y="176" text-anchor="middle">DINOv2 ViT-B/14</text>
+  <text class="ts" x="140" y="193" text-anchor="middle">extract_dino.py — MPS/CUDA/CPU</text></g>
+
+<g class="c-amber"><rect x="40" y="242" width="200" height="60" rx="6"/>
+  <text class="th" x="140" y="266" text-anchor="middle">PCA 768 → 96</text>
+  <text class="ts" x="140" y="283" text-anchor="middle">per-view .npy + pca.npy cache</text></g>
+
+<line class="arr" x1="140" y1="122" x2="140" y2="152" marker-end="url(#arrow)"/>
+<line class="arr" x1="140" y1="212" x2="140" y2="242" marker-end="url(#arrow)"/>
+
+<!-- ================ BRUSH ZONE ================ -->
+<rect class="zone" x="290" y="34" width="670" height="470" rx="8"/>
+<text class="sec" x="306" y="58">BRUSH TRAINING STEP (RUST / BURN / CUBECL — RUNS ON METAL)</text>
+
+<!-- data loading -->
+<g class="c-amber"><rect x="310" y="76" width="200" height="60" rx="6"/>
+  <text class="th" x="410" y="100" text-anchor="middle">Feature loading</text>
+  <text class="ts" x="410" y="117" text-anchor="middle">brush-dataset · SceneView.features</text></g>
+
+<line class="arr" x1="240" y1="272" x2="278" y2="272"/>
+<path class="arr" d="M278 272 L278 106 L310 106" marker-end="url(#arrow)"/>
+
+<!-- splat params -->
+<g class="c-blue"><rect x="310" y="176" width="200" height="74" rx="6"/>
+  <text class="th" x="410" y="198" text-anchor="middle">Splats (existing params)</text>
+  <text class="ts" x="410" y="215" text-anchor="middle">transforms [N,10] · SH · opacity</text>
+  <text class="ts" x="410" y="231" text-anchor="middle">brush-render gaussian_splats.rs</text></g>
+
+<g class="c-amber"><rect x="310" y="270" width="200" height="60" rx="6"/>
+  <text class="th" x="410" y="292" text-anchor="middle">features [N, 64]</text>
+  <text class="ts" x="410" y="310" text-anchor="middle">new learnable Param, randn init</text></g>
+
+<!-- two raster passes -->
+<g class="c-blue"><rect x="570" y="140" width="200" height="74" rx="6"/>
+  <text class="th" x="670" y="163" text-anchor="middle">RGB raster pass</text>
+  <text class="ts" x="670" y="180" text-anchor="middle">existing kernels, full backward</text>
+  <text class="ts" x="670" y="196" text-anchor="middle">projection · sort · rasterize</text></g>
+
+<g class="c-amber"><rect x="570" y="248" width="200" height="88" rx="6"/>
+  <text class="th" x="670" y="271" text-anchor="middle">Feature raster pass</text>
+  <text class="ts" x="670" y="288" text-anchor="middle">reuses projection/sort ·  geometry</text>
+  <text class="ts" x="670" y="303" text-anchor="middle">detached · features from global mem</text>
+  <text class="ts" x="670" y="319" text-anchor="middle">low res ≈ 5·(H/14, W/14)</text></g>
+
+<line class="arr" x1="510" y1="205" x2="570" y2="185" marker-end="url(#arrow)"/>
+<line class="arr" x1="510" y1="230" x2="570" y2="278" marker-end="url(#arrow)"/>
+<line class="arr" x1="510" y1="300" x2="570" y2="300" marker-end="url(#arrow)"/>
+
+<!-- losses -->
+<g class="c-blue"><rect x="810" y="140" width="140" height="74" rx="6"/>
+  <text class="th" x="880" y="168" text-anchor="middle">RGB losses</text>
+  <text class="ts" x="880" y="186" text-anchor="middle">L1 + SSIM (+ depth)</text></g>
+
+<g class="c-amber"><rect x="810" y="248" width="140" height="88" rx="6"/>
+  <text class="th" x="880" y="272" text-anchor="middle">DINO MSE</text>
+  <text class="ts" x="880" y="289" text-anchor="middle">vs cached features</text>
+  <text class="ts" x="880" y="305" text-anchor="middle">+ 3-NN feature</text>
+  <text class="ts" x="880" y="320" text-anchor="middle">variance reg</text></g>
+
+<line class="arr" x1="770" y1="177" x2="810" y2="177" marker-end="url(#arrow)"/>
+
+<!-- MLP between feature pass and loss -->
+<g class="c-amber"><rect x="590" y="380" width="200" height="60" rx="6"/>
+  <text class="th" x="690" y="402" text-anchor="middle">Burn MLP 64→64→64→96</text>
+  <text class="ts" x="690" y="420" text-anchor="middle">no-bias Linear+ReLU · α-normalize</text></g>
+
+<path class="arr" d="M670 336 L670 380" marker-end="url(#arrow)"/>
+<path class="arr" d="M790 410 L880 410 L880 336" marker-end="url(#arrow)"/>
+<path class="arr" d="M410 136 L410 176"/>
+<path class="arr" d="M510 106 L880 106 L880 140" marker-end="url(#arrow)"/>
+<text class="ts" x="700" y="100" text-anchor="middle">GT feature maps [h/14 · w/14, 96]</text>
+
+<!-- gradient flow -->
+<path class="arr-grad" d="M810 292 L770 292" marker-end="url(#arrow-grad)"/>
+<path class="arr-grad" d="M570 320 L510 320" marker-end="url(#arrow-grad)"/>
+<text class="tg" x="540" y="345">∂L/∂feat only</text>
+<text class="tg" x="880" y="238" text-anchor="middle">grads: features + MLP only</text>
+
+<!-- ================ OUTPUTS ================ -->
+<g><rect class="box" x="310" y="530" width="640" height="52" rx="6"/>
+  <text class="t" x="630" y="552" text-anchor="middle">Outputs: trained splat (.ply) + per-Gaussian feature table + MLP weights + PCA matrix</text>
+  <text class="ts" x="630" y="570" text-anchor="middle">consumable for feature visualization and future GARField-style grouping / RSRD-style part tracking</text></g>
+<line class="arr" x1="630" y1="504" x2="630" y2="530" marker-end="url(#arrow)"/>
+
+<!-- LEGEND -->
+<g class="c-blue"><rect x="40" y="600" width="15" height="15" rx="3"/></g>
+<text class="ts" x="64" y="612">Existing Brush component — reused</text>
+<g class="c-amber"><rect x="290" y="600" width="15" height="15" rx="3"/></g>
+<text class="ts" x="314" y="612">New — added by this design</text>
+<line class="arr-grad" x1="540" y1="607" x2="580" y2="607" marker-end="url(#arrow-grad)"/>
+<text class="ts" x="590" y="612">gradient flow (feature pass)</text>
+</svg>

@@ -219,7 +219,7 @@ pub(crate) fn find_depth_path<'a>(
         let search_name_str = search_name.to_str().unwrap_or("");
 
         let matches_stem = if is_bin_format {
-            stem_str.eq_ignore_ascii_case(&format!("{}_depth", search_stem_str))
+            stem_str.eq_ignore_ascii_case(&format!("{search_stem_str}_depth"))
         } else {
             stem_str.eq_ignore_ascii_case(search_name_str)
                 || stem_str.eq_ignore_ascii_case(search_stem_str)

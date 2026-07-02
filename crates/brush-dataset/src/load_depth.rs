@@ -82,10 +82,10 @@ impl LoadDepth {
                 let mut conf_bytes = None;
                 if self.vfs.reader_at_path(&conf_path).await.is_ok() {
                     let mut c_bytes = vec![];
-                    if let Ok(mut reader) = self.vfs.reader_at_path(&conf_path).await {
-                        if reader.read_to_end(&mut c_bytes).await.is_ok() {
-                            conf_bytes = Some(c_bytes);
-                        }
+                    if let Ok(mut reader) = self.vfs.reader_at_path(&conf_path).await
+                        && reader.read_to_end(&mut c_bytes).await.is_ok()
+                    {
+                        conf_bytes = Some(c_bytes);
                     }
                 }
 
@@ -155,18 +155,18 @@ fn decode_bin_depth(
     }
 
     // Replace NaNs with 0.0 before upscaling to prevent propagation
-    for d in depth.iter_mut() {
+    for d in &mut depth {
         if d.is_nan() {
             *d = 0.0;
         }
     }
 
-    if let Some(conf) = confidence_bytes {
-        if conf.len() == SRC_W * SRC_H {
-            for i in 0..(SRC_W * SRC_H) {
-                if conf[i] < min_confidence {
-                    depth[i] = 0.0;
-                }
+    if let Some(conf) = confidence_bytes
+        && conf.len() == SRC_W * SRC_H
+    {
+        for i in 0..(SRC_W * SRC_H) {
+            if conf[i] < min_confidence {
+                depth[i] = 0.0;
             }
         }
     }

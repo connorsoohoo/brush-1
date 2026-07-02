@@ -49,7 +49,7 @@ pub struct LoadDatasetConfig {
     /// Whether to rescale the dataset to suite the depth map scale
     #[arg(long, help_heading = "Dataset Options", default_value = "false")]
     pub estimate_metric_scale: bool,
-    /// Name of the folder containing depth maps (e.g. "depth", "sensor_data")
+    /// Name of the folder containing depth maps (e.g. "depth", "`sensor_data`")
     #[arg(long, help_heading = "Dataset Options", default_value = "depth")]
     pub depth_dir_name: String,
     /// Format of the depth maps, either "tiff" or "bin"
