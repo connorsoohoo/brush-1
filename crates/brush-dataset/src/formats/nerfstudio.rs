@@ -265,6 +265,7 @@ async fn read_transforms_file(
             image,
             camera,
             depth: None,
+            features: None,
             image_size,
         };
         results.push(view);

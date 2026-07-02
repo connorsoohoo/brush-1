@@ -9,10 +9,11 @@ use crate::{
     Dataset,
     config::LoadDatasetConfig,
     formats::{
-        find_depth_path, find_image_by_name, find_mask_path, find_points3d_path, split_eval_every,
+        find_depth_path, find_features_path, find_image_by_name, find_mask_path,
+        find_points3d_path, split_eval_every,
     },
     load_depth::DepthFormat,
-    scene::{LoadDepth, LoadImage, SceneView},
+    scene::{LoadDepth, LoadFeatures, LoadImage, SceneView},
 };
 use brush_render::kernels::camera_model::CameraModel;
 use brush_render::kernels::camera_model::CameraModel::{
@@ -243,6 +244,9 @@ async fn load_dataset_inner(
                 LoadDepth::new(vfs.clone(), p.to_path_buf(), format)
             });
 
+            let features = find_features_path(&vfs, path, &load_args.features_dir_name)
+                .map(|p| LoadFeatures::new(vfs.clone(), p.to_path_buf()));
+
             // Convert w2c to c2w.
             let world_to_cam = glam::Affine3A::from_rotation_translation(
                 img_info.quat,
@@ -274,6 +278,7 @@ async fn load_dataset_inner(
                 camera,
                 image,
                 depth,
+                features,
                 image_size,
             });
         }

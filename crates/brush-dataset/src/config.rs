@@ -58,6 +58,13 @@ pub struct LoadDatasetConfig {
     /// Minimum confidence level to keep for binary depth maps (0, 1, or 2)
     #[arg(long, help_heading = "Dataset Options", default_value = "1")]
     pub depth_min_confidence: u8,
+    /// Name of the folder containing per-view feature maps (`<image_stem>.npy`)
+    #[arg(
+        long,
+        help_heading = "Dataset Options",
+        default_value = "dino_features"
+    )]
+    pub features_dir_name: String,
 }
 
 fn parse_size(s: &str) -> Result<u64, parse_size::Error> {

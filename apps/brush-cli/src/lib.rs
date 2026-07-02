@@ -39,6 +39,10 @@ pub struct Cli {
     )]
     pub with_viewer: bool,
 
+    /// Start the viewer in the DINO feature view (requires --dino training).
+    #[arg(long, default_value = "false")]
+    pub dino_view: bool,
+
     #[clap(flatten)]
     pub animation: AnimationArgs,
 
@@ -74,7 +78,11 @@ pub struct AnimationArgs {
 }
 
 impl Cli {
-    pub fn validate(self) -> Result<Self, Error> {
+    pub fn validate(mut self) -> Result<Self, Error> {
+        // The DINO feature view only exists in the viewer.
+        if self.dino_view {
+            self.with_viewer = true;
+        }
         if self.animation.render_anim.is_some() {
             if self.source.is_none() {
                 return Err(Error::raw(

@@ -156,11 +156,23 @@ async fn run_loader(
                 None
             };
 
+            let features = if let Some(load_features) = &view.features {
+                Some(
+                    load_features
+                        .load()
+                        .await
+                        .expect("Scene loader failed to load a feature map"),
+                )
+            } else {
+                None
+            };
+
             let batch = Arc::new(SceneBatch {
                 img_packed,
                 has_alpha,
                 alpha_mode: view.image.alpha_mode(),
                 depth,
+                features,
                 camera: view.camera,
             });
             cache.lock().await.insert(index, batch.clone());

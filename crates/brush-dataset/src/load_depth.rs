@@ -63,9 +63,10 @@ impl LoadDepth {
             DepthFormat::Tiff => {
                 let (depth, w, h) = decode_f32_tiff(&bytes)?;
                 if w != expected_w || h != expected_h {
-                    Err(LoadDepthError::ReadTiffError(format!(
-                        "invalid depth size {w} x {h}, expected {expected_w} x {expected_h}"
-                    )))
+                    // Depth maps are often at the sensor's native resolution
+                    // while images may be downscaled (e.g. --max-resolution);
+                    // resample instead of erroring, like the bin path does.
+                    Ok(resize_bilinear(&depth, w, h, expected_w, expected_h))
                 } else {
                     Ok(depth)
                 }

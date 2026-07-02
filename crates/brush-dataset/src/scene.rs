@@ -5,6 +5,7 @@ use image::DynamicImage;
 use std::sync::Arc;
 
 pub use crate::load_depth::LoadDepth;
+pub use crate::load_features::LoadFeatures;
 pub use crate::load_image::LoadImage;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -19,6 +20,7 @@ pub struct SceneView {
     pub image: LoadImage,
     pub camera: Camera,
     pub depth: Option<LoadDepth>,
+    pub features: Option<LoadFeatures>,
     pub image_size: glam::UVec2,
 }
 
@@ -68,6 +70,7 @@ impl Scene {
                 image: v.image.with_scale(scale),
                 camera: v.camera,
                 depth: v.depth,
+                features: v.features,
                 image_size: v.image_size,
             })
             .collect();
@@ -168,6 +171,8 @@ pub struct SceneBatch {
     pub alpha_mode: AlphaMode,
     /// Optional `[H, W]` f32 metric depth map, `0` marking invalid depth.
     pub depth: Option<TensorData>,
+    /// Optional `[H, W, C]` f32 feature map plus its channel count `C`.
+    pub features: Option<(TensorData, usize)>,
     pub camera: Camera,
 }
 
