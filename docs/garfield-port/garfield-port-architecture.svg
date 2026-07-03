@@ -1,0 +1,208 @@
+<svg width="1080" height="824" viewBox="0 0 1080 824" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>GARField-in-Brush architecture: SAM masks and LiDAR feed a Gaussian-native scale-conditioned affinity field alongside DiG features, decomposed into parts, with a future mesh-catalog reuse path</title>
+<desc>Left: an offline Python step runs SAM ViT-H automatic mask generation on the dataset images to produce per-view mask-id maps, and back-projects each mask with iPhone LiDAR metric depth to a 3D scale value; a quantile transformer normalizes the scales. Center: a shared Brush splat carries existing geometry, the existing DiG per-Gaussian DINO feature latent (PR 28), and a new per-Gaussian GARField affinity latent. Both latents are rendered through the same DiG feature-rasterization kernel with geometry detached. The affinity image is decoded by a scale-conditioned MLP to a 256-d L2-normalized embedding and trained with a scale-conditioned contrastive loss over SAM-mask pixel pairs (pull same-mask, push different-mask). LiDAR also feeds the existing depth loss that regularizes geometry. Gradients flow only to the affinity latent and its decoder. Right: at decomposition, each Gaussian's affinity is queried at a chosen scale and HDBSCAN-clustered into parts; an interactive scale slider and click-to-segment view expose the hierarchy. Output: part-segmented Gaussians, each part carrying its DiG features, for sim import and RSRD part tracking. Bottom (future work, section 7): each part's pooled DiG features plus its metric 3D scale form a descriptor matched against a catalog of previously reconstructed meshes; a hit reuses the catalog asset, a miss reconstructs it and inserts it into the catalog.</desc>
+
+<style>
+  text { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .t  { font-size: 14px; fill: #1f2937; }
+  .ts { font-size: 11.5px; fill: #6b7280; }
+  .th { font-size: 14px; font-weight: 600; fill: #1f2937; }
+  .sec { font-size: 12px; font-weight: 700; fill: #475569; letter-spacing: 0.08em; }
+  rect.box { fill: #f3f4f6; stroke: #cbd5e1; stroke-width: 1; }
+  rect.zone { fill: none; stroke: #cbd5e1; stroke-width: 1; stroke-dasharray: 5 4; }
+  rect.zone-future { fill: none; stroke: #7c3aed; stroke-width: 1; stroke-dasharray: 5 4; }
+  .arr { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
+  .arr-grad { stroke: #dc2626; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+  .arr-lidar { stroke: #0891b2; stroke-width: 1.5; fill: none; stroke-dasharray: 6 3; }
+  .arr-future { stroke: #7c3aed; stroke-width: 1.5; fill: none; stroke-dasharray: 6 3; }
+  .tg { font-size: 11.5px; fill: #dc2626; }
+  .tl { font-size: 11.5px; fill: #0e7490; }
+  .sec-future { font-size: 12px; font-weight: 700; fill: #6d28d9; letter-spacing: 0.08em; }
+  .c-blue rect  { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.2; }
+  .c-blue text.th  { fill: #1e3a8a; }
+  .c-blue text.ts  { fill: #3b5aa0; }
+  .c-amber rect { fill: #fef3c7; stroke: #d97706; stroke-width: 1.2; }
+  .c-amber text.th { fill: #92400e; }
+  .c-amber text.ts { fill: #a16232; }
+  .c-teal rect { fill: #cffafe; stroke: #0891b2; stroke-width: 1.2; }
+  .c-teal text.th { fill: #155e75; }
+  .c-teal text.ts { fill: #0e7490; }
+  .c-future rect { fill: #ede9fe; stroke: #7c3aed; stroke-width: 1.2; stroke-dasharray: 4 3; }
+  .c-future text.th { fill: #5b21b6; }
+  .c-future text.ts { fill: #6d28d9; }
+</style>
+
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arrow-grad" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#dc2626" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arrow-lidar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#0891b2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arrow-future" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<rect x="0" y="0" width="1080" height="824" fill="#ffffff"/>
+
+<!-- ================ OFFLINE ZONE ================ -->
+<rect class="zone" x="20" y="34" width="250" height="470" rx="8"/>
+<text class="sec" x="36" y="58">OFFLINE (PYTHON, ONE-OFF)</text>
+
+<g><rect class="box" x="40" y="76" width="210" height="44" rx="6"/>
+  <text class="t" x="145" y="95" text-anchor="middle">Dataset images</text>
+  <text class="ts" x="145" y="110" text-anchor="middle">COLMAP / nerfstudio capture</text></g>
+
+<g class="c-amber"><rect x="40" y="150" width="210" height="60" rx="6"/>
+  <text class="th" x="145" y="174" text-anchor="middle">SAM ViT-H auto masks</text>
+  <text class="ts" x="145" y="191" text-anchor="middle">per-view mask-id map · eroded</text></g>
+
+<g class="c-teal"><rect x="40" y="240" width="210" height="60" rx="6"/>
+  <text class="th" x="145" y="264" text-anchor="middle">iPhone LiDAR depth</text>
+  <text class="ts" x="145" y="281" text-anchor="middle">Splat King → metric .tiff</text></g>
+
+<g class="c-amber"><rect x="40" y="336" width="210" height="72" rx="6"/>
+  <text class="th" x="145" y="359" text-anchor="middle">3D mask scales</text>
+  <text class="ts" x="145" y="376" text-anchor="middle">(pts.std·2).norm() — metric</text>
+  <text class="ts" x="145" y="392" text-anchor="middle">via LiDAR back-projection</text></g>
+
+<g class="c-amber"><rect x="40" y="434" width="210" height="52" rx="6"/>
+  <text class="th" x="145" y="456" text-anchor="middle">Quantile transformer</text>
+  <text class="ts" x="145" y="473" text-anchor="middle">scale → normal, exported</text></g>
+
+<line class="arr" x1="145" y1="120" x2="145" y2="150" marker-end="url(#arrow)"/>
+<path class="arr" d="M145 210 L145 336" marker-end="url(#arrow)"/>
+<path class="arr-lidar" d="M110 300 L110 336" marker-end="url(#arrow-lidar)"/>
+<line class="arr" x1="145" y1="408" x2="145" y2="434" marker-end="url(#arrow)"/>
+
+<!-- ================ BRUSH ZONE ================ -->
+<rect class="zone" x="290" y="34" width="480" height="640" rx="8"/>
+<text class="sec" x="306" y="58">BRUSH TRAINING STEP (RUST / BURN / CUBECL — RUNS ON METAL)</text>
+
+<!-- shared splat -->
+<g class="c-blue"><rect x="310" y="76" width="200" height="60" rx="6"/>
+  <text class="th" x="410" y="100" text-anchor="middle">Splats (existing)</text>
+  <text class="ts" x="410" y="117" text-anchor="middle">geometry · SH · opacity</text></g>
+
+<!-- DiG latent (existing) -->
+<g class="c-blue"><rect x="310" y="164" width="200" height="62" rx="6"/>
+  <text class="th" x="410" y="186" text-anchor="middle">DiG features [N,64]</text>
+  <text class="ts" x="410" y="203" text-anchor="middle">existing (PR #28) · DINO MLP→96</text>
+  <text class="ts" x="410" y="218" text-anchor="middle">MSE vs cached DINOv2</text></g>
+
+<!-- GARField latent (new) -->
+<g class="c-amber"><rect x="310" y="254" width="200" height="56" rx="6"/>
+  <text class="th" x="410" y="277" text-anchor="middle">Affinity latent [N,64]</text>
+  <text class="ts" x="410" y="294" text-anchor="middle">new learnable Param, randn</text></g>
+
+<!-- feature raster pass (reused) -->
+<g class="c-blue"><rect x="560" y="176" width="190" height="76" rx="6"/>
+  <text class="th" x="655" y="199" text-anchor="middle">Feature raster pass</text>
+  <text class="ts" x="655" y="216" text-anchor="middle">reused DiG kernel · low-res</text>
+  <text class="ts" x="655" y="232" text-anchor="middle">geometry detached</text></g>
+
+<!-- scale-conditioned decoder -->
+<g class="c-amber"><rect x="560" y="292" width="190" height="72" rx="6"/>
+  <text class="th" x="655" y="315" text-anchor="middle">Scale-cond. MLP</text>
+  <text class="ts" x="655" y="332" text-anchor="middle">concat(latent, s) → 256</text>
+  <text class="ts" x="655" y="348" text-anchor="middle">L2-normalized</text></g>
+
+<!-- contrastive loss -->
+<g class="c-amber"><rect x="470" y="404" width="280" height="92" rx="6"/>
+  <text class="th" x="610" y="427" text-anchor="middle">Scale-conditioned contrastive loss</text>
+  <text class="ts" x="610" y="444" text-anchor="middle">pull same-mask · push diff-mask (margin 1)</text>
+  <text class="ts" x="610" y="460" text-anchor="middle">scale sampled per pair · hierarchy term</text>
+  <text class="ts" x="610" y="476" text-anchor="middle">grads → affinity latent + MLP only</text></g>
+
+<!-- depth loss (lidar reg) -->
+<g class="c-teal"><rect x="310" y="404" width="140" height="72" rx="6"/>
+  <text class="th" x="380" y="427" text-anchor="middle">Depth loss</text>
+  <text class="ts" x="380" y="444" text-anchor="middle">disparity-L1</text>
+  <text class="ts" x="380" y="460" text-anchor="middle">regularizes geom.</text></g>
+
+<!-- arrows within brush -->
+<path class="arr" d="M410 136 L410 164"/>
+<path class="arr" d="M510 195 L560 205" marker-end="url(#arrow)"/>
+<path class="arr" d="M510 282 L560 240" marker-end="url(#arrow)"/>
+<path class="arr" d="M655 252 L655 292" marker-end="url(#arrow)"/>
+<path class="arr" d="M655 364 L655 384 L610 384 L610 404" marker-end="url(#arrow)"/>
+<path class="arr-lidar" d="M380 476 L380 116 L410 116" marker-end="url(#arrow-lidar)"/>
+
+<!-- mask + scale inputs into loss / decoder -->
+<path class="arr" d="M250 180 L270 180 L270 442 L470 442" marker-end="url(#arrow)"/>
+<text class="ts" x="300" y="436">mask ids</text>
+<path class="arr" d="M250 372 L280 372 L280 330 L560 328" marker-end="url(#arrow)"/>
+<text class="ts" x="300" y="322">scale s</text>
+
+<!-- gradient flow -->
+<path class="arr-grad" d="M470 470 L410 470 L410 310" marker-end="url(#arrow-grad)"/>
+<text class="tg" x="418" y="360">∂L/∂affinity</text>
+
+<!-- ================ DECOMPOSITION ZONE ================ -->
+<rect class="zone" x="790" y="34" width="270" height="470" rx="8"/>
+<text class="sec" x="806" y="58">DECOMPOSITION (CPU, ON DEMAND)</text>
+
+<g class="c-amber"><rect x="810" y="76" width="230" height="72" rx="6"/>
+  <text class="th" x="925" y="99" text-anchor="middle">Interactive "Segment" view</text>
+  <text class="ts" x="925" y="116" text-anchor="middle">egui scale slider + click</text>
+  <text class="ts" x="925" y="132" text-anchor="middle">affinity dist &lt; 0.5 · DBSCAN</text></g>
+
+<g class="c-amber"><rect x="810" y="176" width="230" height="60" rx="6"/>
+  <text class="th" x="925" y="200" text-anchor="middle">Query affinity @ scale</text>
+  <text class="ts" x="925" y="217" text-anchor="middle">decode each Gaussian latent</text></g>
+
+<g class="c-amber"><rect x="810" y="266" width="230" height="60" rx="6"/>
+  <text class="th" x="925" y="290" text-anchor="middle">HDBSCAN clustering</text>
+  <text class="ts" x="925" y="307" text-anchor="middle">CPU · voxel-downsampled</text></g>
+
+<g class="c-amber"><rect x="810" y="356" width="230" height="64" rx="6"/>
+  <text class="th" x="925" y="379" text-anchor="middle">Per-part Gaussians</text>
+  <text class="ts" x="925" y="396" text-anchor="middle">each part keeps its DiG feats</text></g>
+
+<path class="arr" d="M750 300 L810 206" marker-end="url(#arrow)"/>
+<path class="arr" d="M925 148 L925 176" marker-end="url(#arrow)"/>
+<path class="arr" d="M925 236 L925 266" marker-end="url(#arrow)"/>
+<path class="arr" d="M925 326 L925 356" marker-end="url(#arrow)"/>
+
+<!-- ================ OUTPUTS ================ -->
+<g><rect class="box" x="310" y="630" width="730" height="52" rx="6"/>
+  <text class="t" x="675" y="652" text-anchor="middle">Outputs: part-segmented splat (per-Gaussian labels) + affinity latent + decoder + quantile params</text>
+  <text class="ts" x="675" y="670" text-anchor="middle">each part carries its DiG features → sim import (articulated asset) · RSRD 4D-DPM part tracking</text></g>
+<path class="arr" d="M925 420 L925 610 L675 610 L675 630" marker-end="url(#arrow)"/>
+
+<!-- ================ FUTURE WORK ZONE (§7) ================ -->
+<rect class="zone-future" x="20" y="698" width="1040" height="76" rx="8"/>
+<text class="sec-future" x="36" y="716">FUTURE WORK (§7) — ASSET REUSE: MATCH NEW CAPTURES AGAINST A MESH CATALOG</text>
+
+<g class="c-future"><rect x="40" y="724" width="210" height="42" rx="6"/>
+  <text class="th" x="145" y="742" text-anchor="middle">Part descriptors</text>
+  <text class="ts" x="145" y="757" text-anchor="middle">pooled DiG feats + metric scale</text></g>
+
+<g class="c-future"><rect x="300" y="724" width="210" height="42" rx="6"/>
+  <text class="th" x="405" y="742" text-anchor="middle">Match vs. mesh catalog</text>
+  <text class="ts" x="405" y="757" text-anchor="middle">cosine NN · geometry-gated</text></g>
+
+<g class="c-future"><rect x="560" y="724" width="470" height="42" rx="6"/>
+  <text class="th" x="795" y="742" text-anchor="middle">Hit → ICP-align + reuse asset · Miss → reconstruct + insert</text>
+  <text class="ts" x="795" y="757" text-anchor="middle">skip re-training known parts; catalog grows, per-object cost falls</text></g>
+
+<path class="arr-future" d="M675 682 L675 700 L145 700 L145 724" marker-end="url(#arrow-future)"/>
+<path class="arr-future" d="M250 745 L300 745" marker-end="url(#arrow-future)"/>
+<path class="arr-future" d="M510 745 L560 745" marker-end="url(#arrow-future)"/>
+
+<!-- LEGEND -->
+<g class="c-blue"><rect x="40" y="794" width="15" height="15" rx="3"/></g>
+<text class="ts" x="63" y="806">Existing / reused</text>
+<g class="c-amber"><rect x="230" y="794" width="15" height="15" rx="3"/></g>
+<text class="ts" x="253" y="806">New (this design)</text>
+<g class="c-teal"><rect x="420" y="794" width="15" height="15" rx="3"/></g>
+<text class="ts" x="443" y="806">LiDAR path</text>
+<g class="c-future"><rect x="560" y="794" width="15" height="15" rx="3"/></g>
+<text class="ts" x="583" y="806">Future work (§7)</text>
+<line class="arr-grad" x1="740" y1="801" x2="775" y2="801" marker-end="url(#arrow-grad)"/>
+<text class="ts" x="784" y="806">gradient flow</text>
+</svg>
