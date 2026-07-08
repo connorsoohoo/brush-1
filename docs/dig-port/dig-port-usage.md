@@ -2,15 +2,25 @@
 
 End-to-end workflow for training DINO-feature-embedded Gaussians (DiG) in Brush on macOS/Metal. See [dig-port-plan.md](dig-port-plan.md) for the design. In the broader Real2Render2Real Mac migration this covers the stage-1 feature/segmentation trainer; the mesh stage is covered separately by `docs/mesh-pipeline-mac/` (sibling branch).
 
-## 1. One-off: extract DINOv2 features (Python)
+## 1. One-off: extract DINOv2 features
 
-The script carries inline dependency metadata (PEP 723), so with [uv](https://docs.astral.sh/uv/) no environment setup is needed — uv resolves torch/torchvision/numpy/pillow into a cached ephemeral env on first run:
+Two equivalent extractors are available.
+
+**Rust (candle, no Python needed):** the `dino-extract` tool runs DINOv2 natively on Metal via [candle](https://github.com/huggingface/candle), downloading weights from the Hugging Face hub (`facebook/dinov2-*`) on first run:
+
+```bash
+cargo run --release -p dino-extract -- --data /path/to/dataset
+```
+
+**Python (reference):** the script carries inline dependency metadata (PEP 723), so with [uv](https://docs.astral.sh/uv/) no environment setup is needed — uv resolves torch/torchvision/numpy/pillow into a cached ephemeral env on first run:
 
 ```bash
 uv run scripts/extract_dino_features.py --data /path/to/dataset
 ```
 
 (Or run it with any Python env that has those four packages: `python scripts/extract_dino_features.py ...`. MPS is used automatically on Apple silicon.)
+
+The two produce interchangeable output (raw features match to per-pixel cosine ≈ 0.99998; the PCA basis spans the same subspace — the Rust tool computes exact PCA where the script uses `torch.pca_lowrank`'s randomized approximation, so trailing near-degenerate components can differ by an orthogonal rotation, which DiG training is invariant to).
 
 `/path/to/dataset` is a normal Brush dataset (COLMAP layout with an `images/` folder, or images directly in the folder). The reference recipe is the default; `--model` (any `facebookresearch/dinov2` hub model, patch size derived automatically), `--max-size` (default 1260), and `--pca-dim` (default 96) are tunable and recorded in `meta.json`. This writes:
 

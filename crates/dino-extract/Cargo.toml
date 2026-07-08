@@ -1,0 +1,27 @@
+[package]
+name = "dino-extract"
+description = "DINOv2 feature-map + PCA preprocessing for DiG (Rust port of scripts/extract_dino_features.py)"
+edition.workspace = true
+version.workspace = true
+readme.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+image.workspace = true
+serde_json = { workspace = true, features = ["std"] }
+rand.workspace = true
+
+candle-core = "0.11"
+candle-nn = "0.11"
+hf-hub = "0.4"
+nalgebra = { version = "0.35", default-features = false, features = ["std"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+candle-core = { version = "0.11", features = ["metal"] }
+candle-nn = { version = "0.11", features = ["metal"] }
+
+[lints]
+workspace = true
