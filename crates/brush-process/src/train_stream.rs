@@ -85,7 +85,8 @@ pub(crate) async fn train_stream(
                 error: anyhow::anyhow!(
                     "--dino was set but no per-view feature maps were found (expected \
                      `<features-dir-name>/<image_stem>.npy` next to the images). Run \
-                     scripts/extract_dino_features.py first; training continues RGB-only."
+                     `cargo run --release -p dino-extract -- --data <dataset>` first; \
+                     training continues RGB-only."
                 ),
             })
             .await;

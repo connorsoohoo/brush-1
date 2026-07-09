@@ -4,11 +4,13 @@
 # ///
 """A/B parity comparison of two dino_features/ output directories.
 
-Used to validate crates/dino-extract (Rust/candle) against
-scripts/extract_dino_features.py (Python/torch reference): run both extractors
-on copies of the same dataset (the Rust tool with --dump-raw, the Python
-script patched to also save raw maps — see crates/dino-extract/src/README.md
-for the exact commands), then:
+Used to validate crates/dino-extract (Rust/candle) against the retired
+Python/torch reference (`git show 222a1220:scripts/extract_dino_features.py`),
+and to re-verify dino-extract against its own f32 baseline after performance
+changes (fp16, fused attention): run both extractors on copies of the same
+dataset (the Rust tool with --dump-raw, the Python script patched to also
+save raw maps — see crates/dino-extract/src/README.md for the exact
+commands), then:
 
     uv run scripts/compare_dino_features.py <ref_dir> <test_dir>
 

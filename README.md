@@ -38,8 +38,8 @@ Brush also can load .zip of splat files to display them as an animation, or a sp
 Brush can train per-Gaussian DINO feature embeddings alongside RGB — a Metal-native port of the DiG model from [Robot See Robot Do](https://arxiv.org/abs/2409.18121), useful for downstream part segmentation and tracking.
 
 ```sh
-# 1. One-off preprocessing: extract DINOv2 feature maps (uv resolves deps automatically)
-uv run scripts/extract_dino_features.py --data /path/to/dataset
+# 1. One-off preprocessing: extract DINOv2 feature maps (runs natively on Metal)
+cargo run --release -p dino-extract -- --data /path/to/dataset
 
 # 2. Train with feature supervision + the live feature view
 brush /path/to/dataset --dino --dino-view

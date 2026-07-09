@@ -1,6 +1,6 @@
 [package]
 name = "dino-extract"
-description = "DINOv2 feature-map + PCA preprocessing for DiG (Rust port of scripts/extract_dino_features.py)"
+description = "DINOv2 feature-map + PCA preprocessing for DiG (native candle/Metal extractor)"
 edition.workspace = true
 version.workspace = true
 readme.workspace = true

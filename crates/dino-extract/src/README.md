@@ -48,6 +48,15 @@ PR that introduced this crate).
 Exact commands from the original evaluation (10 images, 1920×1440). Two
 dataset copies are used so each extractor writes its own `dino_features/`.
 
+The Python/torch reference script has since been removed from the tree
+(after a training-level A/B confirmed parity — see
+[#34](https://github.com/connorsoohoo/brush/pull/34)); recover it from git
+history when re-running this procedure:
+
+```bash
+git show 222a1220:scripts/extract_dino_features.py > /tmp/extract_dino_features.py
+```
+
 ```bash
 # 0. Twin datasets: same 10 images (every 17th frame) into two copies.
 mkdir -p /tmp/eval_rs/images /tmp/eval_py/images
@@ -58,10 +67,11 @@ done
 # 1. Rust extractor, keeping raw pre-PCA maps for comparison.
 cargo run --release -p dino-extract -- --data /tmp/eval_rs --dump-raw
 
-# 2. Python reference. The stock script doesn't save raw maps, so run a
-#    patched copy that also dumps <stem>.raw.npy next to each projection:
+# 2. Python reference (recovered from git history, above). The stock script
+#    doesn't save raw maps, so run a patched copy that also dumps
+#    <stem>.raw.npy next to each projection:
 sed 's|feats_per_image.append(desc.cpu())|feats_per_image.append(desc.cpu())\n        np.save(out_dir / f"{path.stem}.raw.npy", np.ascontiguousarray(desc.cpu().numpy().astype(np.float32)))|' \
-  scripts/extract_dino_features.py > /tmp/extract_dino_features_raw.py
+  /tmp/extract_dino_features.py > /tmp/extract_dino_features_raw.py
 uv run /tmp/extract_dino_features_raw.py --data /tmp/eval_py
 
 # 3. Compare raw features, PCA subspaces, aligned projections, meta.json.
@@ -71,7 +81,7 @@ uv run scripts/compare_dino_features.py \
 # 4. Timing (warm caches — run each once beforehand so HF/torch caches and
 #    uv envs are populated; model download happens on the first run).
 /usr/bin/time cargo run --release -p dino-extract -- --data /tmp/eval_rs
-/usr/bin/time uv run scripts/extract_dino_features.py --data /tmp/eval_py
+/usr/bin/time uv run /tmp/extract_dino_features.py --data /tmp/eval_py
 ```
 
 Reference results (ViT-B/14, fp32, M-series): raw-feature per-pixel cosine

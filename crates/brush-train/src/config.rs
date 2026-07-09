@@ -97,8 +97,7 @@ pub struct TrainConfig {
     pub depth_loss_weight: f32,
 
     /// Enable `DiG` DINO feature training. Requires per-view feature maps
-    /// extracted with `scripts/extract_dino_features.py` (see
-    /// `--features-dir-name`).
+    /// extracted with the `dino-extract` tool (see `--features-dir-name`).
     #[arg(long, help_heading = "Training options", default_value = "false")]
     pub dino: bool,
 

@@ -1,5 +1,6 @@
-//! Rust port of `scripts/extract_dino_features.py`: offline `DINOv2` feature +
-//! PCA preprocessing for DiG-in-Brush, on candle (Metal on Apple silicon).
+//! Offline `DINOv2` feature + PCA preprocessing for DiG-in-Brush, on candle
+//! (Metal on Apple silicon). Rust port of the retired Python/torch reference
+//! (`git show 222a1220:scripts/extract_dino_features.py`).
 //!
 //! Writes the same artifacts to `<data>/dino_features/`: per-view
 //! `[h/14, w/14, pca_dim]` f32 `.npy` maps, `pca.npy`, and `meta.json`.
