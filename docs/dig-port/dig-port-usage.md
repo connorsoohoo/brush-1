@@ -14,7 +14,7 @@ Constraints: supported models are `vits14`/`vitb14`/`vitl14` (no register varian
 
 The tool was validated against the original Python/torch reference (retired; see `git show 222a1220:scripts/extract_dino_features.py`): raw features match to per-pixel cosine ≈ 0.99998, the PCA basis spans the same subspace, and a training-level A/B showed eval curves within run-to-run noise ([#34](https://github.com/connorsoohoo/brush/pull/34)). The Rust tool computes exact PCA where the reference used `torch.pca_lowrank`'s randomized approximation, so trailing near-degenerate components can differ by an orthogonal rotation, which DiG training is invariant to.
 
-`/path/to/dataset` is a normal Brush dataset (COLMAP layout with an `images/` folder, or images directly in the folder). The reference recipe is the default; `--model`, `--max-size` (default 1260), and `--pca-dim` (default 96) are tunable and recorded in `meta.json`. This writes:
+`/path/to/dataset` is a normal Brush dataset (COLMAP layout with an `images/` folder, or images directly in the folder). The reference recipe is the default; `--model`, `--max-size` (default 1260), `--pca-dim` (default 96), and `--dtype` (default `f32`; `f16` is ~25% faster at slightly reduced numerical parity) are tunable and recorded in `meta.json`. This writes:
 
 ```
 dataset/dino_features/<image_stem>.npy   # [H/14, W/14, 96] f32 per view

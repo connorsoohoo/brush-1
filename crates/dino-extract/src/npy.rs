@@ -41,6 +41,32 @@ pub fn write_npy_f32(path: &Path, data: &[f32], shape: &[usize]) -> std::io::Res
     Ok(())
 }
 
+/// Minimal reader for the same subset — test-only, for golden fixtures.
+#[cfg(test)]
+pub fn read_npy_f32(path: &Path) -> std::io::Result<(Vec<f32>, Vec<usize>)> {
+    let bytes = std::fs::read(path)?;
+    assert_eq!(&bytes[..8], b"\x93NUMPY\x01\x00", "npy magic/version");
+    let header_len = u16::from_le_bytes([bytes[8], bytes[9]]) as usize;
+    let header = std::str::from_utf8(&bytes[10..10 + header_len]).expect("utf8 header");
+    assert!(
+        header.contains("'<f4'") && header.contains("'fortran_order': False"),
+        "unsupported npy header: {header}"
+    );
+    let shape_part = header.split("'shape':").nth(1).expect("shape key");
+    let open = shape_part.find('(').expect("shape open paren");
+    let close = shape_part.find(')').expect("shape close paren");
+    let shape: Vec<usize> = shape_part[open + 1..close]
+        .split(',')
+        .filter_map(|s| s.trim().parse().ok())
+        .collect();
+    let data: Vec<f32> = bytes[10 + header_len..]
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect();
+    assert_eq!(data.len(), shape.iter().product::<usize>(), "npy length");
+    Ok((data, shape))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

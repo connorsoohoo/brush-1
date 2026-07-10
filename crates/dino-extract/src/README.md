@@ -1,47 +1,71 @@
-# dino-extract — potential algorithmic speedups
+# dino-extract — algorithmic speedups
 
-Per-image inference currently matches the Python/torch reference (~3.2 s/image
-for ViT-B/14 at max-size 1260 on an M-series GPU). That is expected: the
-workload is GPU-bound, and both implementations run the same unfused math on
-the same hardware. A ViT-B forward at ~6k tokens is ~1.2 TFLOP, dominated by
-attention: each of the 12 blocks materializes a `[heads, T, T]` f32 score
-tensor (~1.7 GB at T≈6031) and softmaxes over it — memory-bandwidth-bound, so
-host-language overhead is irrelevant. The Rust win today is fixed overhead
-only (0.64 s model load vs. several seconds of interpreter + torch import +
-hub checks).
+Three of the four levers below are implemented; measured on the family_room
+capture (10 images, 1920×1440, ViT-B/14 at max-size 1260, M-series GPU):
 
-Levers to become genuinely faster per image, in rough order of value:
+| configuration                        | s/image | vs. original |
+|--------------------------------------|---------|--------------|
+| original (naive attention, serial)   | 3.54    | 1.0×         |
+| SDPA + pipeline overlap (f32, default) | 1.85  | 1.9×         |
+| `--dtype f16`                        | 1.41    | 2.5×         |
 
-1. **fp16/bf16 inference** (~2×, cheapest). Load the `VarBuilder` at
-   `DType::F16` and cast the input; bandwidth-bound attention scales almost
-   linearly with element size. Costs a little numerical parity — re-run the
-   raw-feature cosine comparison (`--dump-raw` + `compare` against the Python
-   outputs) before trusting it; expect mean cosine to drop from ~0.99998 to
-   ~0.999x. Best gated behind a `--dtype f16` flag, keeping f32 the default.
+Parity of the shipped paths against the original naive-f32 implementation
+(via `compare_dino_features.py`, same harness as the original Python A/B):
+f32/SDPA raw-feature mean cosine 1.000000, PCA principal angle ≤0.002°;
+f16 mean cosine 0.999985, projected-map structure correlation 0.999994.
 
-2. **Chunked / fused attention** (avoids the 1.7 GB score tensor). Either use
-   candle's Metal SDPA path (`candle_nn::ops::sdpa`, available for supported
-   head dims in recent candle) or compute attention in query chunks (e.g.
-   512 rows at a time: scores chunk → softmax → apply, never holding the full
-   `[T, T]` matrix). Cuts peak memory by ~1.7 GB and the softmax memory
-   traffic substantially. Note the torch reference *can't* do this without
-   xformers, so this is where Rust pulls ahead rather than matching.
+1. **fp16/bf16 inference** — implemented (`--dtype f16|bf16`, f32 default).
+   Loads the `VarBuilder` at the requested dtype; compute runs at that dtype
+   and features are cast back to f32 before PCA/output. Costs a little
+   numerical parity (see table above) — re-verify with the A/B below when
+   touching this path.
 
-3. **Pipeline overlap** (~0.3–0.5 s/image). Image decode + the antialiased
-   bicubic resize run single-threaded on the CPU between GPU calls. Decode and
-   resize image `i+1` on a worker thread (or rayon) while the GPU processes
-   image `i`; the per-image CPU cost then hides entirely behind inference.
+2. **Chunked / fused attention** — implemented. On Metal, attention goes
+   through candle's fused SDPA kernel (`candle_nn::ops::sdpa`; all supported
+   models have head dim 64). Elsewhere it runs in 512-row query chunks. Both
+   avoid materializing the `[heads, T, T]` score tensor (~1.7 GB f32 at
+   T≈6031) the naive path softmaxed over. The torch reference *can't* do this
+   without xformers, so this is where Rust pulls ahead rather than matching.
 
-4. **Micro-batching** (small). Batching B images through the model amortizes
-   kernel-launch overhead, but since the kernels are large and memory-bound
-   the gain is minor — and peak attention memory scales with B. Only worth it
-   after (2).
+3. **Pipeline overlap** — implemented. A loader thread decodes + bicubic-
+   resizes image `i+1` while the GPU processes image `i`, hiding the per-image
+   CPU cost behind inference.
 
-Items 1–3 stack: plausibly ~2.5–3× per image combined. All of them change
-performance only — outputs should be re-verified against the Python reference
-(raw-feature cosine, PCA subspace angles) whenever one lands, using the A/B
-procedure below (the same one used for the original parity evaluation in the
-PR that introduced this crate).
+4. **Micro-batching** (not implemented, small). Batching B images through the
+   model amortizes kernel-launch overhead, but the kernels are large and
+   memory-bound so the gain is minor — and peak attention memory scales
+   with B.
+
+## Fast impl-vs-impl correctness checks
+
+`cargo test -p dino-extract` (~1 s in release, no dataset or network needed)
+covers the parity questions that previously required the full A/B:
+
+- `golden_features_match_reference` — **real-weight golden check**: forwards
+  the two small frames in `fixtures/` (ViT-B f32, CPU, max-size 224) and
+  compares per-pixel cosine against `fixtures/*.raw.npy`, which were generated
+  by the original Python-parity-validated implementation (naive f32
+  attention). Skips — never downloads — if the ViT-B weights aren't already in
+  the local HF cache.
+- `chunked_attention_matches_naive` — chunked vs. the original full-matrix
+  attention on random tensors (CPU).
+- `sdpa_attention_matches_naive_on_metal` — the fused Metal kernel vs. the
+  original attention (skips when Metal is unavailable).
+- `f16_forward_close_to_f32` — end-to-end forward on a tiny random-weight
+  model, f16 vs. f32 cosine.
+
+The naive attention path (the one originally parity-validated against
+Python/torch) is kept in `dinov2.rs` under `#[cfg(test)]` as the baseline
+these tests compare against.
+
+To regenerate the goldens (only if the *reference semantics* intentionally
+change): build the last-validated implementation, run it on a copy of the
+fixture images with `--dump-raw --max-size 224 --device cpu`, and copy the
+`*.raw.npy` outputs back into `fixtures/`.
+
+The full A/B below remains the deep-validation path (full-resolution images,
+PCA subspace + projected-map checks); the golden test is the everyday
+regression gate.
 
 ## Parity A/B procedure
 
