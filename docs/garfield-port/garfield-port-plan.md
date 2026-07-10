@@ -1,7 +1,7 @@
 # GARField in Brush -- porting scale-conditioned affinity grouping to Gaussian-native Rust/Burn/Metal
 
-**Status:** Proposed
-**Last updated:** 2026-07-02 (Brush citations verified against `main` @ `2569af5f`; reference citations against `chungmin99/garfield` and `kerrj/dig` @ HEAD)
+**Status:** Accepted — implementation started
+**Last updated:** 2026-07-10 (added the live training-monitoring requirement, §3.5; Brush citations verified against `main` @ `2569af5f`; reference citations against `chungmin99/garfield` and `kerrj/dig` @ HEAD)
 **Goal:** Add GARField-style hierarchical, scale-conditioned grouping to Brush so a trained splat can be decomposed into parts on macOS/Metal — without the CUDA-only nerfacto + tiny-cuda-nn hashgrid stack. This is the segmentation half of the DiG feature stage ([dig-port-plan.md](../dig-port/dig-port-plan.md)); together they turn a scan into part-decomposed, feature-carrying Gaussians for downstream sim / RSRD part tracking.
 
 > **TL;DR** — GARField learns a per-point *affinity* embedding conditioned on a continuous *scale*: two points that fall in the same SAM mask at scale `s` are pulled together, different masks pushed apart, and grouping at scale `s` implies grouping at every larger scale. In the reference this is a **separate NeRF** (nerfacto + two tiny-cuda-nn hashgrids) that is later *queried at each Gaussian's mean* and HDBSCAN-clustered into parts. Because the affinity field is only ever sampled at Gaussian means, we skip the NeRF entirely: attach a **per-Gaussian affinity latent** and a **shared scale-conditioned decoder MLP**, render it through the DiG feature kernel we already built, and supervise with the same SAM-mask contrastive loss. That removes the one hard CUDA dependency (the hashgrid) and reuses DiG's kernel, refine, optimizer, and export scaffolding wholesale.
@@ -26,7 +26,7 @@ The R2R2R Mac migration's feature/segmentation stage has two models. DiG (per-Ga
 | Scale normalization | sklearn `QuantileTransformer` (`garfield_pipeline.py:176-186`) | Same — CPU, portable; params exported |
 | Densify/prune of the latent | gsplat strategy grows the param dict | Extend Brush's refine, exactly as DiG's feature table (`train.rs:690,786`) |
 | Decomposition | per-Gaussian query + cuML HDBSCAN (`garfield_gaussian_pipeline.py:461,495`) | Same query (trivial — latents are already per-Gaussian) + CPU HDBSCAN, once |
-| Interactive viewer | viser scale slider + click-to-segment | egui "Segment" mode next to the DiG feature toggle (`scene.rs:655`) |
+| Interactive viewer | viser scale slider + click-to-segment | egui "Segment" mode next to the DiG feature toggle (`scene.rs:655`), plus a **live affinity view during training** (§3.5) |
 
 ### Out of scope (future work)
 
@@ -109,6 +109,8 @@ The affinity latent grows/prunes in lockstep with the splats exactly as the DiG 
 
 ### 3.5 Decomposition + interactive viewer
 
+**Live training monitoring (requirement).** GARField training must be observable in realtime, mirroring DiG's live feature view (the "DINO feature view" checkbox / `--dino-view`, refreshed every 50 steps): when the GARField loss is active, an **"Affinity view"** toggle appears in the scene controls beside the DINO feature toggle, together with the **scale slider** (active during training, not only at decomposition). It recolors splats by their decoded affinity at the slider scale — decode each Gaussian's latent at scale `s`, L2-normalize, map the top-3 PCA channels to RGB — through the same `dig_view_splats` recolor path (`train.rs:178`). A `--garfield-view` flag starts the viewer in this mode. Early in training the view is noise; parts should visibly separate into coherent colors as the contrastive loss drops, and moving the scale slider should coarsen/refine the grouping live. This is the go/no-go check that affinity is converging *before* paying for decomposition or downstream RSRD tracking.
+
 **Offline decomposition** (`--segment` export, or a viewer action): decode every Gaussian's latent at a chosen scale, L2-normalize, voxel-downsample, **CPU HDBSCAN** (reference params), propagate labels by 3D nearest-neighbor → a `[N]` int32 part-label array written next to the PLY. Each part is the subset of Gaussians with that label; each part carries its DiG features unchanged.
 
 **Interactive "Segment" view** in the egui app, beside the DiG feature toggle (`scene.rs:655`): a **scale slider** and click-to-segment. On click, ray-pick the front Gaussian, compute affinity distance to all Gaussians at the slider scale, threshold `< 0.5`, tighten with DBSCAN, and recolor the selected group — reusing the `dig_view_splats` recolor path (`train.rs:178`) that already swaps per-Gaussian colors in the viewer. All CPU-side, computed on demand.
@@ -138,7 +140,7 @@ The Gaussian-native design deliberately sidesteps the one hard cliff — there i
 |---|---|---|
 | 1. Data | `extract_sam_masks.py` (SAM + metric-LiDAR 3D scale + quantile fit); `LoadGroups`; `SceneBatch.groups`; CLI | mask-id maps + scales reproduce the reference recipe on `tiger`; Rust loader round-trips a generated `.npy`; scales are metric where LiDAR covers |
 | 2. Affinity field | `GarfieldModule` (latent + scale-cond decoder); render via existing feature kernel; refine remapping | renders a `[h,w,64]` affinity image; split/prune changes splat count without shape panics; decoded vectors are unit-norm |
-| 3. Contrastive training | pair sampling; scale sampling + quantile; pull/push loss; optimizer | loss decreases; on held-out pairs, mean same-mask distance < mean different-mask distance by ≳ the margin |
+| 3. Contrastive training | pair sampling; scale sampling + quantile; pull/push loss; optimizer; **live affinity view + in-training scale slider (§3.5)** | loss decreases; on held-out pairs, mean same-mask distance < mean different-mask distance by ≳ the margin; the live affinity view shows parts separating into coherent colors as the loss drops |
 | 4. Decompose + viewer | CPU HDBSCAN decomposition; click-to-segment + scale slider; part export | on `tiger`, the scale slider yields a coherent coarse→fine hierarchy (whole object → major parts); click isolates a part comparable to the reference render |
 
 **Success criterion:** on the `tiger` capture (already on disk with its DiG cache), the scale slider produces a sensible grouping hierarchy and click-to-segment isolates semantically coherent parts, each retaining its DiG features — matching the reference's qualitative decomposition without any hashgrid/NeRF/CUDA dependency.
