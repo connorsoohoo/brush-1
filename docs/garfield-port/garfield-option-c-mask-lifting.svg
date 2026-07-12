@@ -1,0 +1,210 @@
+<svg width="1080" height="790" viewBox="0 0 1080 790" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Options A, B, C for GARField-in-Brush with pros and cons: rejected faithful NeRF port, learned Gaussian-native affinity, and training-free mask lifting — the latter two feeding identical viewer and export interfaces</title>
+<desc>Left: shared inputs — a trained Brush splat with frozen geometry and DiG features, plus per-view SAM mask-id maps and metric 3D scales from the offline extract_sam_masks.py step (section 3.1), optionally augmented with cross-view-consistent mask IDs from SAM 2 or SAM 3 video propagation. Center top, Option A (rejected): a faithful port of the reference — nerfacto plus two tiny-cuda-nn hashgrids and a fused MLP on Metal, a second model queried only at Gaussian means. Pro: exact reference parity. Con: the hashgrid is the biggest CUDA cliff and would be slower on Metal, and it trains and synchronizes a second model. Center middle, Option B (recommended): a per-Gaussian affinity latent with a scale-conditioned decoder MLP, trained with a scale-conditioned contrastive loss over SAM-mask pixel pairs, yielding a continuous scale hierarchy. Pros: continuous granularity, reuses DiG scaffolding, and the affinity embedding is a future catalog retrieval key. Cons: roughly 0.75 gigabytes of extra latent and Adam state at one million splats, a third render pass per training step, and slow contrastive convergence. Center bottom, Option C (training-free fast path): one forward accumulation pass records each Gaussian's blending-weight contribution per mask per view, then a one-off CPU global assignment (FlashSplat closed-form solve, Lifting-by-Gaussians fusion, or Trace3D instance tracing) writes part labels; hierarchy is discrete nested SAM mask levels. Pros: zero training, no refine coupling, erases the design's high-severity memory concern, fastest route to part labels. Cons: discrete levels only, needs cross-view mask IDs, boundaries inherit raw SAM mask quality, and no affinity embedding is produced. Right: Options B and C feed identical interfaces — the egui Segment view with click-to-segment and a hierarchy slider (continuous scale for B, discrete level for C), the parts.npy int32 label export (B adds affinity, MLP, and quantile sidecars), and the 2D mask factory that renders a selected part through the dataset cameras and thresholds alpha to produce per-view binary masks for downstream sim import, RSRD tracking, and the mesh catalog.</desc>
+
+<style>
+  text { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .t  { font-size: 14px; fill: #1f2937; }
+  .ts { font-size: 11.5px; fill: #6b7280; }
+  .th { font-size: 14px; font-weight: 600; fill: #1f2937; }
+  .sec { font-size: 12px; font-weight: 700; fill: #475569; letter-spacing: 0.08em; }
+  .tp { font-size: 11.5px; fill: #15803d; }
+  .tn { font-size: 11.5px; fill: #b91c1c; }
+  rect.box { fill: #f3f4f6; stroke: #cbd5e1; stroke-width: 1; }
+  rect.zone { fill: none; stroke: #cbd5e1; stroke-width: 1; stroke-dasharray: 5 4; }
+  .arr { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
+  .arr-grad { stroke: #dc2626; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+  .tg { font-size: 11.5px; fill: #dc2626; }
+  .c-blue rect  { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.2; }
+  .c-blue text.th  { fill: #1e3a8a; }
+  .c-blue text.ts  { fill: #3b5aa0; }
+  .c-amber rect { fill: #fef3c7; stroke: #d97706; stroke-width: 1.2; }
+  .c-amber text.th { fill: #92400e; }
+  .c-amber text.ts { fill: #a16232; }
+  .c-teal rect { fill: #cffafe; stroke: #0891b2; stroke-width: 1.2; }
+  .c-teal text.th { fill: #155e75; }
+  .c-teal text.ts { fill: #0e7490; }
+  .c-gray rect { fill: #e5e7eb; stroke: #9ca3af; stroke-width: 1.2; }
+  .c-gray text.th { fill: #4b5563; }
+  .c-gray text.ts { fill: #6b7280; }
+  .sec-a { font-size: 12px; font-weight: 700; fill: #6b7280; letter-spacing: 0.08em; }
+  .sec-b { font-size: 12px; font-weight: 700; fill: #1d4ed8; letter-spacing: 0.08em; }
+  .sec-c { font-size: 12px; font-weight: 700; fill: #b45309; letter-spacing: 0.08em; }
+  .sec-t { font-size: 12px; font-weight: 700; fill: #0e7490; letter-spacing: 0.08em; }
+  rect.zone-a { fill: none; stroke: #9ca3af; stroke-width: 1; stroke-dasharray: 5 4; }
+  rect.zone-b { fill: none; stroke: #2563eb; stroke-width: 1; stroke-dasharray: 5 4; }
+  rect.zone-c { fill: none; stroke: #d97706; stroke-width: 1; stroke-dasharray: 5 4; }
+  rect.zone-t { fill: none; stroke: #0891b2; stroke-width: 1; stroke-dasharray: 5 4; }
+</style>
+
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arrow-grad" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#dc2626" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<rect x="0" y="0" width="1080" height="790" fill="#ffffff"/>
+
+<!-- ================ SHARED INPUTS ================ -->
+<rect class="zone" x="20" y="34" width="250" height="420" rx="8"/>
+<text class="sec" x="36" y="58">SHARED INPUTS (&#167;3.1, UNCHANGED)</text>
+
+<g><rect class="box" x="40" y="76" width="210" height="60" rx="6"/>
+  <text class="th" x="145" y="98" text-anchor="middle">Trained Brush splat</text>
+  <text class="ts" x="145" y="114" text-anchor="middle">geometry frozen,</text>
+  <text class="ts" x="145" y="128" text-anchor="middle">DiG features attached (PR #28)</text></g>
+
+<g><rect class="box" x="40" y="166" width="210" height="74" rx="6"/>
+  <text class="th" x="145" y="188" text-anchor="middle">Per-view SAM masks</text>
+  <text class="ts" x="145" y="204" text-anchor="middle">mask-id maps + metric 3D scales</text>
+  <text class="ts" x="145" y="218" text-anchor="middle">extract_sam_masks.py</text>
+  <text class="ts" x="145" y="232" text-anchor="middle">(one-off, offline)</text></g>
+
+<g class="c-amber"><rect x="40" y="270" width="210" height="74" rx="6"/>
+  <text class="th" x="145" y="292" text-anchor="middle">Cross-view mask IDs</text>
+  <text class="ts" x="145" y="308" text-anchor="middle">SAM 2/3 video propagation</text>
+  <text class="ts" x="145" y="322" text-anchor="middle">optional: needed by C-lifting,</text>
+  <text class="ts" x="145" y="336" text-anchor="middle">not by B (within-image pairs)</text></g>
+
+<text class="ts" x="145" y="380" text-anchor="middle">Same capture, same script,</text>
+<text class="ts" x="145" y="395" text-anchor="middle">same sidecar cache &#8212;</text>
+<text class="ts" x="145" y="410" text-anchor="middle">options B and C consume</text>
+<text class="ts" x="145" y="425" text-anchor="middle">identical artifacts</text>
+
+<!-- ================ OPTION A (REJECTED) ================ -->
+<rect class="zone-a" x="310" y="34" width="430" height="116" rx="8"/>
+<text class="sec-a" x="326" y="58">OPTION A &#8212; FAITHFUL NERF PORT (REJECTED, &#167;1)</text>
+
+<g class="c-gray"><rect x="330" y="70" width="390" height="40" rx="6"/>
+  <text class="ts" x="525" y="87" text-anchor="middle">nerfacto + 2&#215; tcnn HashGrid + fused MLP on Metal &#8212;</text>
+  <text class="ts" x="525" y="101" text-anchor="middle">a second model, only ever queried at Gaussian means</text></g>
+
+<text class="tp" x="330" y="126">+ exact reference parity</text>
+<text class="tn" x="330" y="141">&#8722; hashgrid = biggest CUDA cliff (slower on Metal); trains &amp; syncs a 2nd model</text>
+
+<!-- ================ OPTION B ================ -->
+<rect class="zone-b" x="310" y="166" width="430" height="296" rx="8"/>
+<text class="sec-b" x="326" y="190">OPTION B &#8212; LEARNED AFFINITY (RECOMMENDED, &#167;3.2&#8211;3.4)</text>
+
+<g class="c-blue"><rect x="330" y="208" width="185" height="74" rx="6"/>
+  <text class="th" x="422" y="230" text-anchor="middle">Affinity latent [N, 64]</text>
+  <text class="ts" x="422" y="246" text-anchor="middle">+ scale-conditioned</text>
+  <text class="ts" x="422" y="260" text-anchor="middle">decoder MLP &#8594; 256-d</text>
+  <text class="ts" x="422" y="274" text-anchor="middle">rendered via DiG kernel</text></g>
+
+<g class="c-blue"><rect x="535" y="208" width="185" height="74" rx="6"/>
+  <text class="th" x="627" y="230" text-anchor="middle">Contrastive training</text>
+  <text class="ts" x="627" y="246" text-anchor="middle">pull/push SAM-mask pairs,</text>
+  <text class="ts" x="627" y="260" text-anchor="middle">scale-conditioned, ~1000s of</text>
+  <text class="ts" x="627" y="274" text-anchor="middle">steps + optimizer + refine</text></g>
+
+<path class="arr-grad" d="M535 245 L523 245" marker-end="url(#arrow-grad)"/>
+
+<g class="c-blue"><rect x="330" y="308" width="390" height="60" rx="6"/>
+  <text class="th" x="525" y="330" text-anchor="middle">Continuous scale hierarchy</text>
+  <text class="ts" x="525" y="346" text-anchor="middle">query any Gaussian at any scale s &#8712; [0, 2]; HDBSCAN at decomposition;</text>
+  <text class="ts" x="525" y="360" text-anchor="middle">affinity embedding also exportable as a retrieval key (&#167;7)</text></g>
+
+<path class="arr" d="M525 282 L525 308" marker-end="url(#arrow)"/>
+
+<text class="tp" x="330" y="394">+ continuous granularity; reuses DiG scaffolding; embedding = future catalog key (&#167;7)</text>
+<text class="tn" x="330" y="410">&#8722; ~0.75 GB latent+Adam @ 1M splats (the &#167;4 High concern); 3rd render pass per step;</text>
+<text class="tn" x="342" y="425">slow contrastive convergence; refine must remap the latent</text>
+
+<!-- ================ OPTION C ================ -->
+<rect class="zone-c" x="310" y="478" width="430" height="296" rx="8"/>
+<text class="sec-c" x="326" y="502">OPTION C &#8212; TRAINING-FREE MASK LIFTING (&#167;1)</text>
+
+<g class="c-amber"><rect x="330" y="520" width="185" height="88" rx="6"/>
+  <text class="th" x="422" y="542" text-anchor="middle">Weight accumulation</text>
+  <text class="ts" x="422" y="558" text-anchor="middle">one forward pass per view:</text>
+  <text class="ts" x="422" y="572" text-anchor="middle">per-Gaussian blending weight</text>
+  <text class="ts" x="422" y="586" text-anchor="middle">inside vs. outside each mask</text>
+  <text class="ts" x="422" y="600" text-anchor="middle">(no gradients, no optimizer)</text></g>
+
+<g class="c-amber"><rect x="535" y="520" width="185" height="88" rx="6"/>
+  <text class="th" x="627" y="542" text-anchor="middle">Global label assignment</text>
+  <text class="ts" x="627" y="558" text-anchor="middle">FlashSplat closed-form solve /</text>
+  <text class="ts" x="627" y="572" text-anchor="middle">LBG feature fusion /</text>
+  <text class="ts" x="627" y="586" text-anchor="middle">Trace3D instance tracing;</text>
+  <text class="ts" x="627" y="600" text-anchor="middle">one-off, CPU, seconds&#8211;minutes</text></g>
+
+<path class="arr" d="M515 564 L535 564" marker-end="url(#arrow)"/>
+
+<g class="c-amber"><rect x="330" y="634" width="390" height="60" rx="6"/>
+  <text class="th" x="525" y="656" text-anchor="middle">Discrete level hierarchy</text>
+  <text class="ts" x="525" y="672" text-anchor="middle">labels per nested SAM mask level (subpart / part / object);</text>
+  <text class="ts" x="525" y="686" text-anchor="middle">splat stays frozen &#8212; no refine coupling, no second latent in memory</text></g>
+
+<path class="arr" d="M525 608 L525 634" marker-end="url(#arrow)"/>
+
+<text class="tp" x="330" y="720">+ zero training; no refine coupling; erases the &#167;4 High memory concern;</text>
+<text class="tp" x="342" y="735">fastest route to parts.npy + mask factory; baseline/initializer for B</text>
+<text class="tn" x="330" y="751">&#8722; discrete levels only; needs cross-view mask IDs; boundaries = raw SAM</text>
+<text class="tn" x="342" y="766">mask quality; produces no affinity embedding</text>
+
+<!-- input arrows -->
+<path class="arr" d="M270 106 L330 220" marker-end="url(#arrow)"/>
+<path class="arr" d="M270 203 L310 240" marker-end="url(#arrow)"/>
+<path class="arr" d="M270 230 L330 545" marker-end="url(#arrow)"/>
+<path class="arr" d="M250 344 L330 575" marker-end="url(#arrow)"/>
+
+<!-- ================ SHARED INTERFACES ================ -->
+<rect class="zone-t" x="790" y="34" width="270" height="740" rx="8"/>
+<text class="sec-t" x="806" y="58">SHARED INTERFACES (B &#8801; C)</text>
+
+<g class="c-teal"><rect x="810" y="86" width="230" height="102" rx="6"/>
+  <text class="th" x="925" y="108" text-anchor="middle">Viewer &#8220;Segment&#8221; mode</text>
+  <text class="ts" x="925" y="124" text-anchor="middle">click-to-segment + hierarchy slider</text>
+  <text class="ts" x="925" y="138" text-anchor="middle">(B: continuous scale;</text>
+  <text class="ts" x="925" y="152" text-anchor="middle">C: discrete level)</text>
+  <text class="ts" x="925" y="166" text-anchor="middle">recolor via dig_view_splats path,</text>
+  <text class="ts" x="925" y="180" text-anchor="middle">scene.rs:655 / train.rs:178</text></g>
+
+<g class="c-teal"><rect x="810" y="240" width="230" height="88" rx="6"/>
+  <text class="th" x="925" y="262" text-anchor="middle">Part-label export</text>
+  <text class="ts" x="925" y="278" text-anchor="middle">&lt;name&gt;_parts.npy [N] int32</text>
+  <text class="ts" x="925" y="292" text-anchor="middle">(PLY row order) &#8212; identical for B/C;</text>
+  <text class="ts" x="925" y="306" text-anchor="middle">B adds affinity + MLP + quantile</text>
+  <text class="ts" x="925" y="320" text-anchor="middle">sidecars (&#167;3.6)</text></g>
+
+<g class="c-teal"><rect x="810" y="380" width="230" height="102" rx="6"/>
+  <text class="th" x="925" y="402" text-anchor="middle">2D mask factory</text>
+  <text class="ts" x="925" y="418" text-anchor="middle">render selected part through</text>
+  <text class="ts" x="925" y="432" text-anchor="middle">dataset cameras, threshold</text>
+  <text class="ts" x="925" y="446" text-anchor="middle">alpha &gt; 0.9 &#8594; per-view masks</text>
+  <text class="ts" x="925" y="460" text-anchor="middle">(feeds SAM 3D / video pipelines;</text>
+  <text class="ts" x="925" y="474" text-anchor="middle">R2R2R dig_pipeline pattern)</text></g>
+
+<g><rect class="box" x="810" y="534" width="230" height="74" rx="6"/>
+  <text class="th" x="925" y="558" text-anchor="middle">Downstream (unchanged)</text>
+  <text class="ts" x="925" y="574" text-anchor="middle">part-segmented Gaussians, each</text>
+  <text class="ts" x="925" y="588" text-anchor="middle">part carrying DiG features &#8594;</text>
+  <text class="ts" x="925" y="602" text-anchor="middle">sim import, RSRD tracking, &#167;7 catalog</text></g>
+
+<path class="arr" d="M925 482 L925 534" marker-end="url(#arrow)"/>
+
+<!-- option -> interface arrows -->
+<path class="arr" d="M740 314 L790 314" marker-end="url(#arrow)"/>
+<path class="arr" d="M740 640 L790 640" marker-end="url(#arrow)"/>
+
+<!-- legend -->
+<g><rect class="box" x="20" y="480" width="250" height="186" rx="6"/>
+  <text class="th" x="36" y="504">Legend</text>
+  <rect x="36" y="516" width="14" height="10" fill="#e5e7eb" stroke="#9ca3af"/>
+  <text class="ts" x="58" y="525">Option A: faithful port (rejected)</text>
+  <rect x="36" y="536" width="14" height="10" fill="#dbeafe" stroke="#2563eb"/>
+  <text class="ts" x="58" y="545">Option B: learned, trained</text>
+  <rect x="36" y="556" width="14" height="10" fill="#fef3c7" stroke="#d97706"/>
+  <text class="ts" x="58" y="565">Option C: training-free / optional input</text>
+  <rect x="36" y="576" width="14" height="10" fill="#cffafe" stroke="#0891b2"/>
+  <text class="ts" x="58" y="585">Shared interfaces (identical for B and C)</text>
+  <line x1="36" y1="601" x2="50" y2="601" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text class="ts" x="58" y="605">gradient flow (B only)</text>
+  <text class="tp" x="36" y="625">+ pros</text>
+  <text class="tn" x="36" y="643">&#8722; cons</text></g>
+
+</svg>

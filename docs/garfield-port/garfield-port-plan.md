@@ -1,7 +1,7 @@
 # GARField in Brush -- porting scale-conditioned affinity grouping to Gaussian-native Rust/Burn/Metal
 
 **Status:** Accepted — implementation started
-**Last updated:** 2026-07-10 (added the live training-monitoring requirement, §3.5; Brush citations verified against `main` @ `2569af5f`; reference citations against `chungmin99/garfield` and `kerrj/dig` @ HEAD)
+**Last updated:** 2026-07-12 (added Option C: training-free mask lifting; 2026-07-10: live training-monitoring requirement, §3.5. Brush citations verified 2026-07-02 against `main` @ `2569af5f`; reference citations against `chungmin99/garfield` and `kerrj/dig` @ HEAD)
 **Goal:** Add GARField-style hierarchical, scale-conditioned grouping to Brush so a trained splat can be decomposed into parts on macOS/Metal — without the CUDA-only nerfacto + tiny-cuda-nn hashgrid stack. This is the segmentation half of the DiG feature stage ([dig-port-plan.md](../dig-port/dig-port-plan.md)); together they turn a scan into part-decomposed, feature-carrying Gaussians for downstream sim / RSRD part tracking.
 
 > **TL;DR** — GARField learns a per-point *affinity* embedding conditioned on a continuous *scale*: two points that fall in the same SAM mask at scale `s` are pulled together, different masks pushed apart, and grouping at scale `s` implies grouping at every larger scale. In the reference this is a **separate NeRF** (nerfacto + two tiny-cuda-nn hashgrids) that is later *queried at each Gaussian's mean* and HDBSCAN-clustered into parts. Because the affinity field is only ever sampled at Gaussian means, we skip the NeRF entirely: attach a **per-Gaussian affinity latent** and a **shared scale-conditioned decoder MLP**, render it through the DiG feature kernel we already built, and supervise with the same SAM-mask contrastive loss. That removes the one hard CUDA dependency (the hashgrid) and reuses DiG's kernel, refine, optimizer, and export scaffolding wholesale.
@@ -43,10 +43,53 @@ The reference's structural fact (verified in `garfield_gaussian_pipeline.py`): G
 |---|---|---|
 | **A. Faithful port** | Reimplement a multi-resolution hash-grid encoder (24 levels, 8 feats/level, `2^19` table) + fused MLP + nerfacto density on Metal/wgpu; train a second model; query at Gaussian means | The hashgrid is the single largest CUDA dependency in the whole stack, and this trains and keeps consistent a *second* model. All of it exists only to be sampled at Gaussian means. Rejected. |
 | **B. Gaussian-native affinity (recommended)** | Per-Gaussian latent `[N, 64]` + a shared decoder `MLP(concat(latent[g], s)) → 256`, L2-normalized; render the latent through the existing DiG feature kernel; contrastive loss on the rendered affinity image | No hashgrid, no NeRF, one model. Reuses DiG's kernel, refine remapping, per-param optimizer, sidecar export, and viewer plumbing. Scale-conditioning relocates from a coordinate-hashgrid input to an MLP input on the latent. |
+| **C. Training-free mask lifting** | Keep the trained splat **frozen**; accumulate each Gaussian's blending-weight contribution inside vs. outside every SAM mask per view, then run one global label assignment (FlashSplat-style closed-form solve / LBG-style fusion / Trace3D-style instance tracing). No new learnable parameters. | No training, no optimizer, no refine coupling — seconds–minutes on a done splat instead of a second training run. Hierarchy becomes **discrete** (nested mask levels, not a continuous scale), and multi-object labeling wants cross-view mask IDs (SAM 2/3 video propagation). Kept as the fast path for part *extraction*; see [Option C below](#option-c-training-free-mask-lifting-same-interfaces-no-training). |
+
+#### Pros and cons at a glance
+
+| Option | Pros | Cons |
+|---|---|---|
+| **A. Faithful NeRF port** (rejected) | Exact reference parity — no re-derivation risk; every published GARField result applies directly. | The multi-res hashgrid is the single largest CUDA dependency in the stack with no good Metal equivalent (would be *slower*, not just more code); trains and keeps consistent a **second model**; all of that machinery only ever gets sampled at Gaussian means. |
+| **B. Gaussian-native affinity** (recommended) | One model, no NeRF/hashgrid; reuses DiG's kernel, refine remap, optimizer, export, and viewer plumbing wholesale; **continuous** scale hierarchy (query any Gaussian at any `s`); affinity embedding exportable as a future §7 retrieval key. | Second per-Gaussian latent + Adam state (~0.75 GB @ N≈1M — §4's one **High** concern on unified memory); a third render pass per training step; contrastive convergence is slow (warmup + more steps); refine must remap the latent in lockstep. |
+| **C. Training-free mask lifting** (fast path) | Zero training — seconds–minutes on the frozen splat; no optimizer, no refine coupling, no resident second latent (erases §4's High concern for the segmentation role); simplest route to `parts.npy` + the 2D mask factory; doubles as a baseline/initializer for B. | Hierarchy is **discrete** (quantized to nested SAM mask levels — no continuous scale slider); multi-object labeling needs cross-view mask IDs (SAM 2/3 propagation) or an inconsistency-tolerant solve; part boundaries inherit raw SAM mask quality (no learned smoothing); produces no affinity embedding. |
 
 **Recommendation: B.** The reference's coordinate hashgrid `hash(x)` exists to give a continuous field over 3D space, but it is only ever evaluated at Gaussian means (`:461`) — so a *learned per-Gaussian latent* is a strict generalization of "hashgrid sampled at `x_g`": more capacity, no interpolation smoothing, and defined exactly where (and only where) it is used. The same latent decoded at different `s` yields different affinity vectors, reproducing scale-dependent grouping the same way the reference's `MLP(concat(hash, s))` does. This is precisely the extension DiG's design doc anticipated ("attach a second per-Gaussian affinity latent and reuse this design's feature rasterizer").
 
 **Geometry regularization (LiDAR).** The fork already consumes iPhone LiDAR (Splat King) as depth supervision: `scripts/convert_lidar_depth_tiff.py` → per-view metric `.tiff` → the disparity-L1 depth loss (`train.rs:314-321`, `brush-loss/src/lib.rs:1122`). This matters twice for GARField. (1) Cleaner geometry → cleaner part boundaries: floaters and depth ambiguity smear the affinity supervision, and the depth loss tightens the Gaussians the affinity rides on. (2) **Metric scale** (§3.1): computing a SAM mask's 3D scale requires back-projecting its pixels to 3D, and metric LiDAR depth makes that scale axis real meters rather than arbitrary COLMAP units — grounding the scale slider and the mask-scale sampling without per-scene renormalization.
+
+### Option C: training-free mask lifting (same interfaces, no training)
+
+*Added 2026-07-12. B remains the recommendation for full GARField parity; this section documents the post-GARField family of "lift 2D masks directly onto a trained splat" methods, and how they would slot into this design without changing any interface in §3.5–§3.6.*
+
+![Option B vs Option C: two backends, same interfaces](garfield-option-c-mask-lifting.svg)
+
+**Premise.** Everything downstream of GARField in this pipeline consumes only two artifacts: per-Gaussian **part labels** (`parts.npy`) and the parts' **DiG features** (which come from DiG, not GARField). RSRD tracking does not consume the affinity embedding itself (§ Out of scope — GARField supplies the *static* segmentation only), and the §7 catalog keys are DiG features + metric geometry. So the learned affinity field is load-bearing for exactly one thing: the *continuous* scale hierarchy in the interactive viewer. If discrete granularity levels are acceptable, the whole training stage (§3.2–§3.4) can be replaced by a one-off assignment on the frozen splat.
+
+**The methods** (all consume: a trained 3DGS scene + per-view SAM masks — i.e. exactly the §3.1 artifacts plus the splat we already have):
+
+| Method | Core idea | Training | Hierarchy | Cross-view mask IDs |
+|---|---|---|---|---|
+| **FlashSplat** ([arXiv:2409.08270](https://arxiv.org/abs/2409.08270), ECCV 2024) | Per-Gaussian blending weights accumulated inside vs. outside each mask; global 2D→3D label assignment solved in closed form (per-Gaussian integer argmax). ~30 s/scene, robust to mask noise. | None | Discrete | Tolerant for binary per-object solves; multi-object wants consistent IDs |
+| **Lifting by Gaussians (LBG)** ([arXiv:2502.00173](https://arxiv.org/abs/2502.00173), WACV 2025) | Fuse per-view SAM masks (+ optional CLIP/DINO features) onto Gaussians by rendered contribution weights; segment-then-lift, per-scene, no optimization. | None | Discrete (object + part levels) | Needs association (video propagation or feature matching) |
+| **Gaussian Grouping** ([arXiv:2312.00732](https://arxiv.org/abs/2312.00732), ECCV 2024) | 16-d per-Gaussian identity encoding trained by rendering; cross-view IDs from a zero-shot video tracker (DEVA). The lightweight-training middle ground; adds editing ops (delete/inpaint). | Light (minutes) | Discrete | Provided by the tracker |
+| **Trace3D** ([arXiv:2508.03227](https://arxiv.org/abs/2508.03227), 2025) | Gaussian Instance Tracing: per-Gaussian instance-weight matrix across views; detects and *corrects* inconsistent 2D masks; hierarchical segmentation + clean object extraction. | None (optimization, not SGD training) | Hierarchical | Recovered/corrected by the tracing itself |
+
+**What Brush would implement** (FlashSplat-flavored, the simplest):
+1. **Weight accumulation pass** — for each view, one forward render of the frozen splat that scatter-adds each Gaussian's blending weight into per-(Gaussian, mask-id) accumulators, using the §3.1 mask-id maps. Same CAS-atomic scatter shape as the DiG feature backward (`render_features.rs`), but forward-only and run **once per view**, not per training step.
+2. **Global assignment** — CPU: per Gaussian, argmax of accumulated weight over mask labels (with FlashSplat's inside/outside softening for noise). Nested SAM mask levels (the §3.1 per-pixel ordered mask lists) yield one label array per granularity level → a stepped hierarchy.
+3. **Write `parts.npy`** — same artifact, same PLY row order as §3.6.
+
+What disappears relative to Option B: the second latent and its Adam state (§4's one **High**-severity memory concern), the third render pass per training step, the contrastive-convergence risk, and all refine coupling (§3.4 — labels are computed after training on a frozen splat, so densify/prune never touches them).
+
+**The cross-view ID question.** GARField dodges SAM's view inconsistency by supervising only within-image pairs and letting 3D consistency emerge; lifting methods must instead *have* consistent mask identities across views. Two practical sources: (a) **SAM 2/3 video propagation** over the capture sequence — natural for SplatKing captures, which are videos; (b) FlashSplat's per-object binary solves or Trace3D's inconsistency correction, which tolerate imperfect IDs. This is the one genuinely new preprocessing requirement, and it is confined to the offline Python side (`extract_sam_masks.py` gains a `--propagate` mode).
+
+**Interfaces preserved** (the point of this section):
+- **Viewer "Segment" mode (§3.5):** click-to-segment becomes an O(1) label lookup on the picked Gaussian + the same `dig_view_splats` recolor path (`train.rs:178`); the scale slider becomes a **level** slider stepping through the nested label arrays — the same UX shape as the reference's precomputed 30-scale `keep_list` (`garfield_gaussian_pipeline.py:279`), just with fewer, data-defined steps.
+- **Exports (§3.6):** `<name>_parts.npy` `[N]` int32 identical. The affinity/MLP/quantile sidecars simply don't exist under C (nothing downstream requires them today).
+- **2D mask factory:** rendering a selected part through the dataset cameras and thresholding alpha (the R2R2R `dig_pipeline.save_rendered_images` pattern) is backend-agnostic — it only needs labels.
+- **§7 mesh-catalog matching:** unaffected; retrieval keys are pooled DiG features + metric scale, both independent of how labels were obtained.
+
+**What C gives up:** the continuous scale axis (granularity is quantized to SAM's nested mask levels); learned smoothing of ragged mask boundaries (mitigable with a 3-NN label-smoothing pass, mirroring the DiG feature-variance regularizer); and the affinity embedding as a future retrieval key. **When to prefer which:** if the near-term goal is discrete part extraction feeding the mesh stage (e.g. segment a scan, render per-view masks, reconstruct each part with SAM 3D), C delivers that with no second training run and should be the first milestone; B is the target when RSRD-grade continuous granularity control in the viewer is worth a DiG-sized training increment. The two are not exclusive — C's accumulation pass is also a cheap initializer/sanity baseline for B's learned field.
 
 ## 2. Background: what GARField actually is
 
@@ -164,7 +207,14 @@ The Gaussian-native design deliberately sidesteps the one hard cliff — there i
 - **nerfacto** — nerfstudio's default NeRF; the model GARField's affinity head rode on in the reference. Not ported.
 - **DiG (DINO-embedded Gaussians)** — the companion model ([dig-port-plan.md](../dig-port/dig-port-plan.md)): per-Gaussian DINOv2 features for tracking. GARField groups; DiG describes. RSRD uses both.
 - **RSRD / 4D-DPM** — *Robot See Robot Do* ([arXiv:2409.18121](https://arxiv.org/abs/2409.18121)): GARField (grouping) + DiG (features) + per-part SE(3) tracking against a demo video. GARField supplies the static part segmentation only.
-- **Refine / densification** — 3DGS's periodic split/duplicate/prune; any per-Gaussian tensor (here the affinity latent) must grow/shrink in lockstep.
+- **Refine / densification** — 3DGS's periodic split/duplicate/prune; any per-Gaussian tensor (here the affinity latent) must grow/shrink in lockstep. Only relevant to Option B — Option C labels a frozen splat after training.
+- **Mask lifting (training-free)** — assigning 2D segmentation masks directly to the Gaussians of an already-trained splat via their rendered contribution weights, instead of training a field to absorb the masks. The Option C family.
+- **Blending weight** — a Gaussian's alpha-composited contribution to a rendered pixel; summing these per mask tells you how much each Gaussian "belongs" to that mask, the raw signal all Option C methods share.
+- **FlashSplat** — training-free lifting via a globally optimal closed-form label solve over accumulated blending weights ([arXiv:2409.08270](https://arxiv.org/abs/2409.08270)); the simplest Option C backend and the one sketched for Brush.
+- **Lifting by Gaussians (LBG)** — training-free fusion of per-view SAM masks and 2D foundation features (CLIP/DINO) onto 3DGS ([arXiv:2502.00173](https://arxiv.org/abs/2502.00173)).
+- **Gaussian Grouping** — lightweight-training alternative: per-Gaussian 16-d identity encodings supervised with video-tracker-associated masks ([arXiv:2312.00732](https://arxiv.org/abs/2312.00732)); middle ground between B and C.
+- **Trace3D / Gaussian Instance Tracing** — training-free lifting that additionally detects and corrects view-inconsistent 2D masks via a per-Gaussian instance-weight matrix ([arXiv:2508.03227](https://arxiv.org/abs/2508.03227)).
+- **SAM 2/3 video propagation** — prompting SAM 2 (or SAM 3) once and tracking the mask through the capture video, yielding the cross-view-consistent mask IDs that Option C's multi-object assignment wants and Option B never needed.
 
 ## 7. Future work: mesh-catalog matching
 
@@ -207,3 +257,10 @@ The Gaussian-native design deliberately sidesteps the one hard cliff — there i
 - Segment Anything (SAM), Kirillov et al. — <https://arxiv.org/abs/2304.02643>
 - Instant-NGP (multi-resolution hashgrid), Müller et al. — <https://arxiv.org/abs/2201.05989>
 - 3D Gaussian Splatting, Kerbl et al., SIGGRAPH 2023 — <https://arxiv.org/abs/2308.04079>
+
+**Option C (training-free mask lifting), added 2026-07-12:**
+- FlashSplat: 2D to 3D Gaussian Splatting Segmentation Solved Optimally, Shen et al., ECCV 2024 — <https://arxiv.org/abs/2409.08270>
+- Lifting by Gaussians: fast, training-free 3DGS instance segmentation, WACV 2025 — <https://arxiv.org/abs/2502.00173>
+- Gaussian Grouping: Segment and Edit Anything in 3D Scenes, Ye et al., ECCV 2024 — <https://arxiv.org/abs/2312.00732>
+- Trace3D: Consistent Segmentation Lifting via Gaussian Instance Tracing, 2025 — <https://arxiv.org/abs/2508.03227>
+- Survey: 3D Gaussian Splatting Applications — Segmentation, Editing, Generation, 2025 — <https://arxiv.org/abs/2508.09977>
